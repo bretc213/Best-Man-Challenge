@@ -1,0 +1,21 @@
+{
+  "images" : [
+    {
+      "filename" : "20241227_153450_IMG_3119 - Anthony Clemetson.jpeg",
+      "idiom" : "universal",
+      "scale" : "1x"
+    },
+    {
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "idiom" : "universal",
+      "scale" : "3x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

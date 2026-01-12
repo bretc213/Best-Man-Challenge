@@ -1,0 +1,74 @@
+//
+//  WeeklyChallenge.swift
+//
+
+import Foundation
+
+// MARK: - Nested puzzle/cipher models (matches Firestore document shape)
+
+struct WeeklyChallengePuzzle: Codable {
+    let type: String?           // "mini_sudoku_4x4"
+    let size: Int?              // 4
+    let grid: [Int]?            // flat array length 16, 0 = empty
+
+    let unlock_rule: String?
+    let unlock_value: Int?
+    let unlock_text: String?
+}
+
+struct WeeklyChallengeCipher: Codable {
+    let type: String?           // "caesar"
+    let ciphertext: String?
+    let direction: String?      // "back"
+    let shift: Int?
+}
+
+// MARK: - Quiz models (NEW)
+
+struct WeeklyQuizQuestion: Codable, Identifiable {
+    let id: String
+    let prompt: String
+    let options: [String]
+    let correct_index: Int
+}
+
+struct WeeklyChallengeQuiz: Codable {
+    let points_per_correct: Int?
+    let questions: [WeeklyQuizQuestion]?
+}
+
+// MARK: - Main model
+
+struct WeeklyChallenge: Identifiable, Codable {
+    var id: String
+
+    let week: Int
+    let title: String
+    let description: String
+    let type: ChallengeType
+    let startDate: Date
+    let endDate: Date
+
+    // Riddle-style challenge
+    let answer: String?
+
+    // Puzzle/cipher challenge
+    let puzzle: WeeklyChallengePuzzle?
+    let cipher: WeeklyChallengeCipher?
+
+    // Quiz challenge (NEW)
+    let quiz: WeeklyChallengeQuiz?
+
+    // Optional Firestore flag
+    let is_active: Bool?
+
+    var isActive: Bool {
+        if let is_active { return is_active }
+        let now = Date()
+        return now >= startDate && now < endDate
+    }
+
+    var isExpired: Bool {
+        Date() >= endDate
+    }
+}

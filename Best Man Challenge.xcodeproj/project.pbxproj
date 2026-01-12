@@ -1,0 +1,671 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B94867812F098B3D008D668A /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B94867802F098B3D008D668A /* LaunchScreen.storyboard */; };
+		B94867842F0996AE008D668A /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B94867832F0996AE008D668A /* FirebaseAuth */; };
+		B94867862F0996AE008D668A /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = B94867852F0996AE008D668A /* FirebaseCore */; };
+		B94867882F0996AE008D668A /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = B94867872F0996AE008D668A /* FirebaseFirestore */; };
+		B948678A2F0996AE008D668A /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = B94867892F0996AE008D668A /* FirebaseStorage */; };
+		B9BF5E682DE2903A00E59231 /* VegasOddsViewWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9BF5E672DE2903A00E59231 /* VegasOddsViewWrapper.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B9F7889A2DE1278000725800 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B9F788842DE1277F00725800 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B9F7888B2DE1277F00725800;
+			remoteInfo = "Best Man Challenge";
+		};
+		B9F788A42DE1278000725800 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B9F788842DE1277F00725800 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B9F7888B2DE1277F00725800;
+			remoteInfo = "Best Man Challenge";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B94867802F098B3D008D668A /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		B9BF5E672DE2903A00E59231 /* VegasOddsViewWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VegasOddsViewWrapper.swift; sourceTree = "<group>"; };
+		B9F7888C2DE1277F00725800 /* Best Man Challenge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Best Man Challenge.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B9F788992DE1278000725800 /* Best Man ChallengeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Best Man ChallengeTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B9F788A32DE1278000725800 /* Best Man ChallengeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Best Man ChallengeUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B9A111F32EFA070700F92F4E /* Exceptions for "Best Man Challenge" folder in "Best Man Challenge" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Best Man ChallengeUITests/Best_Man_ChallengeUITests.swift",
+				"Best Man ChallengeUITests/Best_Man_ChallengeUITestsLaunchTests.swift",
+			);
+			target = B9F7888B2DE1277F00725800 /* Best Man Challenge */;
+		};
+		B9A111F42EFA070700F92F4E /* Exceptions for "Best Man Challenge" folder in "Best Man ChallengeUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Best Man ChallengeUITests/Best_Man_ChallengeUITests.swift",
+				"Best Man ChallengeUITests/Best_Man_ChallengeUITestsLaunchTests.swift",
+			);
+			target = B9F788A22DE1278000725800 /* Best Man ChallengeUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		B9F7888E2DE1277F00725800 /* Best Man Challenge */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B9A111F32EFA070700F92F4E /* Exceptions for "Best Man Challenge" folder in "Best Man Challenge" target */,
+				B9A111F42EFA070700F92F4E /* Exceptions for "Best Man Challenge" folder in "Best Man ChallengeUITests" target */,
+			);
+			path = "Best Man Challenge";
+			sourceTree = "<group>";
+		};
+		B9F7889C2DE1278000725800 /* Best Man ChallengeTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Best Man ChallengeTests";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		B9F788892DE1277F00725800 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B94867862F0996AE008D668A /* FirebaseCore in Frameworks */,
+				B948678A2F0996AE008D668A /* FirebaseStorage in Frameworks */,
+				B94867842F0996AE008D668A /* FirebaseAuth in Frameworks */,
+				B94867882F0996AE008D668A /* FirebaseFirestore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B9F788962DE1278000725800 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B9F788A02DE1278000725800 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		B948673E2EFDD65C008D668A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		B948674E2F073316008D668A /* Main Code */ = {
+			isa = PBXGroup;
+			children = (
+				B9F7888E2DE1277F00725800 /* Best Man Challenge */,
+			);
+			path = "Main Code";
+			sourceTree = "<group>";
+		};
+		B9F788832DE1277F00725800 = {
+			isa = PBXGroup;
+			children = (
+				B94867802F098B3D008D668A /* LaunchScreen.storyboard */,
+				B9BF5E672DE2903A00E59231 /* VegasOddsViewWrapper.swift */,
+				B948674E2F073316008D668A /* Main Code */,
+				B9F7889C2DE1278000725800 /* Best Man ChallengeTests */,
+				B948673E2EFDD65C008D668A /* Frameworks */,
+				B9F7888D2DE1277F00725800 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B9F7888D2DE1277F00725800 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B9F7888C2DE1277F00725800 /* Best Man Challenge.app */,
+				B9F788992DE1278000725800 /* Best Man ChallengeTests.xctest */,
+				B9F788A32DE1278000725800 /* Best Man ChallengeUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B9F7888B2DE1277F00725800 /* Best Man Challenge */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B9F788AD2DE1278000725800 /* Build configuration list for PBXNativeTarget "Best Man Challenge" */;
+			buildPhases = (
+				B9F788882DE1277F00725800 /* Sources */,
+				B9F788892DE1277F00725800 /* Frameworks */,
+				B9F7888A2DE1277F00725800 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				B9F7888E2DE1277F00725800 /* Best Man Challenge */,
+			);
+			name = "Best Man Challenge";
+			packageProductDependencies = (
+				B94867832F0996AE008D668A /* FirebaseAuth */,
+				B94867852F0996AE008D668A /* FirebaseCore */,
+				B94867872F0996AE008D668A /* FirebaseFirestore */,
+				B94867892F0996AE008D668A /* FirebaseStorage */,
+			);
+			productName = "Best Man Challenge";
+			productReference = B9F7888C2DE1277F00725800 /* Best Man Challenge.app */;
+			productType = "com.apple.product-type.application";
+		};
+		B9F788982DE1278000725800 /* Best Man ChallengeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B9F788B02DE1278000725800 /* Build configuration list for PBXNativeTarget "Best Man ChallengeTests" */;
+			buildPhases = (
+				B9F788952DE1278000725800 /* Sources */,
+				B9F788962DE1278000725800 /* Frameworks */,
+				B9F788972DE1278000725800 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B9F7889B2DE1278000725800 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B9F7889C2DE1278000725800 /* Best Man ChallengeTests */,
+			);
+			name = "Best Man ChallengeTests";
+			packageProductDependencies = (
+			);
+			productName = "Best Man ChallengeTests";
+			productReference = B9F788992DE1278000725800 /* Best Man ChallengeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B9F788A22DE1278000725800 /* Best Man ChallengeUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B9F788B32DE1278000725800 /* Build configuration list for PBXNativeTarget "Best Man ChallengeUITests" */;
+			buildPhases = (
+				B9F7889F2DE1278000725800 /* Sources */,
+				B9F788A02DE1278000725800 /* Frameworks */,
+				B9F788A12DE1278000725800 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B9F788A52DE1278000725800 /* PBXTargetDependency */,
+			);
+			name = "Best Man ChallengeUITests";
+			packageProductDependencies = (
+			);
+			productName = "Best Man ChallengeUITests";
+			productReference = B9F788A32DE1278000725800 /* Best Man ChallengeUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B9F788842DE1277F00725800 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1630;
+				LastUpgradeCheck = 1630;
+				TargetAttributes = {
+					B9F7888B2DE1277F00725800 = {
+						CreatedOnToolsVersion = 16.3;
+					};
+					B9F788982DE1278000725800 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = B9F7888B2DE1277F00725800;
+					};
+					B9F788A22DE1278000725800 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = B9F7888B2DE1277F00725800;
+					};
+				};
+			};
+			buildConfigurationList = B9F788872DE1277F00725800 /* Build configuration list for PBXProject "Best Man Challenge" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = B9F788832DE1277F00725800;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B94867822F0996AE008D668A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = B9F7888D2DE1277F00725800 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B9F7888B2DE1277F00725800 /* Best Man Challenge */,
+				B9F788982DE1278000725800 /* Best Man ChallengeTests */,
+				B9F788A22DE1278000725800 /* Best Man ChallengeUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B9F7888A2DE1277F00725800 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B94867812F098B3D008D668A /* LaunchScreen.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B9F788972DE1278000725800 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B9F788A12DE1278000725800 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B9F788882DE1277F00725800 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B9BF5E682DE2903A00E59231 /* VegasOddsViewWrapper.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B9F788952DE1278000725800 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B9F7889F2DE1278000725800 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B9F7889B2DE1278000725800 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B9F7888B2DE1277F00725800 /* Best Man Challenge */;
+			targetProxy = B9F7889A2DE1278000725800 /* PBXContainerItemProxy */;
+		};
+		B9F788A52DE1278000725800 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B9F7888B2DE1277F00725800 /* Best Man Challenge */;
+			targetProxy = B9F788A42DE1278000725800 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		B9F788AB2DE1278000725800 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 9ZT8WLR6V3;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		B9F788AC2DE1278000725800 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 9ZT8WLR6V3;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		B9F788AE2DE1278000725800 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphoneos*]" = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9ZT8WLR6V3;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = AppIcon;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Clemtek.Best-Man-Challenge";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		B9F788AF2DE1278000725800 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphoneos*]" = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9ZT8WLR6V3;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = AppIcon;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Clemtek.Best-Man-Challenge";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		B9F788B12DE1278000725800 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9ZT8WLR6V3;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Clemtek.Best-Man-ChallengeTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Best Man Challenge.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Best Man Challenge";
+			};
+			name = Debug;
+		};
+		B9F788B22DE1278000725800 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9ZT8WLR6V3;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Clemtek.Best-Man-ChallengeTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Best Man Challenge.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Best Man Challenge";
+			};
+			name = Release;
+		};
+		B9F788B42DE1278000725800 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9ZT8WLR6V3;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Clemtek.Best-Man-ChallengeUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Best Man Challenge";
+			};
+			name = Debug;
+		};
+		B9F788B52DE1278000725800 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9ZT8WLR6V3;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Clemtek.Best-Man-ChallengeUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Best Man Challenge";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B9F788872DE1277F00725800 /* Build configuration list for PBXProject "Best Man Challenge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B9F788AB2DE1278000725800 /* Debug */,
+				B9F788AC2DE1278000725800 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B9F788AD2DE1278000725800 /* Build configuration list for PBXNativeTarget "Best Man Challenge" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B9F788AE2DE1278000725800 /* Debug */,
+				B9F788AF2DE1278000725800 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B9F788B02DE1278000725800 /* Build configuration list for PBXNativeTarget "Best Man ChallengeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B9F788B12DE1278000725800 /* Debug */,
+				B9F788B22DE1278000725800 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B9F788B32DE1278000725800 /* Build configuration list for PBXNativeTarget "Best Man ChallengeUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B9F788B42DE1278000725800 /* Debug */,
+				B9F788B52DE1278000725800 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B94867822F0996AE008D668A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B94867832F0996AE008D668A /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B94867822F0996AE008D668A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		B94867852F0996AE008D668A /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B94867822F0996AE008D668A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		B94867872F0996AE008D668A /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B94867822F0996AE008D668A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		B94867892F0996AE008D668A /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B94867822F0996AE008D668A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = B9F788842DE1277F00725800 /* Project object */;
+}
