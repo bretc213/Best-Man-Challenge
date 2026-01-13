@@ -1,19 +1,23 @@
 import SwiftUI
 
 struct WeeklyChallengeView: View {
-    @StateObject private var challengeManager = WeeklyChallengeManager()
-
-    // Later we can pass these from your real session model
-    let linkedPlayerId: String?
-    let displayName: String?
+    @EnvironmentObject var challengeManager: WeeklyChallengeManager
 
     @State private var showQuiz = false
 
-    init(linkedPlayerId: String? = nil, displayName: String? = nil) {
-        self.linkedPlayerId = linkedPlayerId
-        self.displayName = displayName
+    private func isLocked(_ challenge: WeeklyChallenge) -> Bool {
+        Date() >= challenge.endDate
     }
 
+    private func buttonTitle(for challenge: WeeklyChallenge) -> String {
+        if isLocked(challenge) {
+            return "View Picks (Locked)"
+        }
+        return challengeManager.lastSubmission == nil
+            ? "Start Quiz"
+            : "View / Edit Picks"
+    }
+    
     var body: some View {
         content
             .toolbar {
@@ -25,16 +29,6 @@ struct WeeklyChallengeView: View {
                     }
                     .accessibilityLabel("Refresh")
                 }
-            }
-            .onAppear {
-                challengeManager.setUserContext(
-                    linkedPlayerId: linkedPlayerId,
-                    displayName: displayName
-                )
-                challengeManager.refresh()
-            }
-            .onDisappear {
-                challengeManager.stopListening()
             }
             .navigationDestination(isPresented: $showQuiz) {
                 if let challenge = challengeManager.currentChallenge {
@@ -97,14 +91,15 @@ struct WeeklyChallengeView: View {
                     Button {
                         showQuiz = true
                     } label: {
-                        Text("Start Quiz")
+                        Text(buttonTitle(for: challenge))
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                 }
 
+
                 if let last = challengeManager.lastSubmission {
-                    lastSubmissionCard(last)
+                    lastSubmissionCard(last, challenge: challenge)
                 } else {
                     noSubmissionCard
                 }
@@ -134,12 +129,16 @@ struct WeeklyChallengeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func lastSubmissionCard(_ submission: WeeklyChallengeSubmission) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Your submission").font(.headline)
+    // ✅ Updated: shows their answers for the week (when available)
+    private func lastSubmissionCard(_ submission: WeeklyChallengeSubmission, challenge: WeeklyChallenge) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Your submission")
+                .font(.headline)
+
             Text("Submitted \(submission.submittedAt.formatted(date: .abbreviated, time: .shortened))")
                 .foregroundStyle(.secondary)
 
+            // Score (if known)
             if let score = submission.score {
                 if let max = submission.maxScore {
                     Text("Score: \(score)/\(max)")
@@ -147,15 +146,66 @@ struct WeeklyChallengeView: View {
                     Text("Score: \(score)")
                 }
             }
+
+            // If any quiz question is missing correct_index, this week is "pending scoring"
+            if isPendingScoring(challenge) {
+                Text("Scoring will be applied after the games finish.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Show quiz answers (if they exist)
+            if let answers = submission.answers,
+               let questions = challenge.quiz?.questions,
+               !questions.isEmpty {
+
+                Divider().opacity(0.35)
+
+                Text("Your picks")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                VStack(spacing: 8) {
+                    ForEach(questions, id: \.id) { q in
+                        let pickedIndex = answers[q.id]
+                        let pickedText: String = {
+                            guard let pickedIndex,
+                                  pickedIndex >= 0,
+                                  pickedIndex < q.options.count else { return "—" }
+                            return q.options[pickedIndex]
+                        }()
+
+                        HStack(alignment: .top, spacing: 10) {
+                            Text(q.prompt)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+
+                            Spacer()
+
+                            Text(pickedText)
+                                .font(.footnote.weight(.semibold))
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
         }
         .padding()
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
+    private func isPendingScoring(_ challenge: WeeklyChallenge) -> Bool {
+        guard let qs = challenge.quiz?.questions, !qs.isEmpty else { return false }
+        // requires WeeklyQuizQuestion.correct_index to be Int?
+        return qs.contains(where: { $0.correct_index == nil })
+    }
+
     private var noSubmissionCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Your submission").font(.headline)
+            Text("Your submission")
+                .font(.headline)
             Text("No submission yet (or you’re not linked to a player).")
                 .foregroundStyle(.secondary)
         }

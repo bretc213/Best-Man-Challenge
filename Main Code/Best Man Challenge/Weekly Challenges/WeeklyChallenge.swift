@@ -29,7 +29,7 @@ struct WeeklyQuizQuestion: Codable, Identifiable {
     let id: String
     let prompt: String
     let options: [String]
-    let correct_index: Int
+    let correct_index: Int?
 }
 
 struct WeeklyChallengeQuiz: Codable {

@@ -9,59 +9,111 @@
 import Foundation
 import FirebaseFirestore
 
-struct WeeklyOverallRow: Identifiable {
-    let id: String              // linkedPlayerId
-    let displayName: String
-    let totalPoints: Int
-}
+typealias WeeklyChallengesOverallStore = WeeklyOverallStore
 
 @MainActor
-final class WeeklyChallengesOverallStore: ObservableObject {
-    @Published var rows: [WeeklyOverallRow] = []
-    @Published var isLoading = false
+final class WeeklyOverallStore: ObservableObject {
+    
+
+    @Published var playersRows: [WeeklyScoreRow] = []
+    @Published var adminsRows: [WeeklyScoreRow] = []
+    @Published var isLoading: Bool = false
     @Published var errorMessage: String?
 
     private let db = Firestore.firestore()
-    private var listener: ListenerRegistration?
+    private var roleByUID: [String: String] = [:]
 
-    func startListening() {
-        errorMessage = nil
-        isLoading = true
-
-        listener?.remove()
-        listener = db.collection("weekly_challenges_leaderboard")
-            .order(by: "totalPoints", descending: true)
-            .addSnapshotListener { [weak self] snap, err in
-                guard let self else { return }
-
-                if let err {
-                    Task { @MainActor in
-                        self.errorMessage = err.localizedDescription
-                        self.isLoading = false
-                    }
-                    return
-                }
-
-                let docs = snap?.documents ?? []
-                let parsed: [WeeklyOverallRow] = docs.map { doc in
-                    let d = doc.data()
-                    return WeeklyOverallRow(
-                        id: doc.documentID,
-                        displayName: d["displayName"] as? String ?? doc.documentID,
-                        totalPoints: d["totalPoints"] as? Int ?? 0
-                    )
-                }
-
-                Task { @MainActor in
-                    self.rows = parsed
-                    self.isLoading = false
-                }
-            }
+    func refresh() {
+        Task { await rebuildOverall() }
     }
 
-    func stopListening() {
-        listener?.remove()
-        listener = nil
-        isLoading = false
+    private func loadAccountsIndex() async {
+        do {
+            let snap = try await db.collection("accounts").getDocuments()
+            var map: [String: String] = [:]
+            for doc in snap.documents {
+                let data = doc.data()
+                let uid = (data["claimed_by_uid"] as? String) ?? ""
+                let role = (data["role"] as? String ?? "").lowercased()
+                if !uid.isEmpty { map[uid] = role }
+            }
+            roleByUID = map
+        } catch {
+            roleByUID = [:]
+        }
+    }
+
+    private func rebuildOverall() async {
+        isLoading = true
+        errorMessage = nil
+        playersRows = []
+        adminsRows = []
+
+        await loadAccountsIndex()
+
+        do {
+            let challengesSnap = try await db.collection("weekly_challenges").getDocuments()
+            let challengeDocs = challengesSnap.documents
+
+            // uid -> (name, lp, totalScore)
+            var totalByUID: [String: (name: String, lp: String?, total: Int)] = [:]
+
+            for challenge in challengeDocs {
+                let subsSnap = try await db.collection("weekly_challenges")
+                    .document(challenge.documentID)
+                    .collection("submissions")
+                    .getDocuments()
+
+                for sub in subsSnap.documents {
+                    let data = sub.data()
+                    let uid = data["uid"] as? String ?? sub.documentID
+                    let name = data["display_name"] as? String ?? data["displayName"] as? String ?? "Unknown"
+                    let lp = data["linked_player_id"] as? String
+                    let score = data["score"] as? Int ?? 0
+
+                    if var existing = totalByUID[uid] {
+                        existing.total += score
+                        // keep earliest known name/lp if needed
+                        totalByUID[uid] = (existing.name.isEmpty ? name : existing.name, existing.lp ?? lp, existing.total)
+                    } else {
+                        totalByUID[uid] = (name, lp, score)
+                    }
+                }
+            }
+
+            var players: [WeeklyScoreRow] = []
+            var admins: [WeeklyScoreRow] = []
+
+            for (uid, v) in totalByUID {
+                let row = WeeklyScoreRow(
+                    id: uid,
+                    displayName: v.name,
+                    linkedPlayerId: v.lp,
+                    score: v.total,
+                    maxScore: nil,
+                    submittedAt: nil
+                )
+
+                let role = (roleByUID[uid] ?? "").lowercased()
+                let isAdmin = ["owner", "commish", "ref", "admin", "exec"].contains(role)
+
+                if isAdmin { admins.append(row) } else { players.append(row) }
+            }
+
+            func sortRows(_ rows: [WeeklyScoreRow]) -> [WeeklyScoreRow] {
+                rows.sorted {
+                    if $0.score != $1.score { return $0.score > $1.score }
+                    return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+                }
+            }
+
+            self.playersRows = sortRows(players)
+            self.adminsRows = sortRows(admins)
+            self.isLoading = false
+
+        } catch {
+            self.errorMessage = error.localizedDescription
+            self.isLoading = false
+        }
     }
 }

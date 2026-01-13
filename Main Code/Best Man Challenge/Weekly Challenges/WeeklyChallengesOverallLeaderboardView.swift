@@ -2,47 +2,100 @@
 //  WeeklyChallengesOverallLeaderboardView.swift
 //  Best Man Challenge
 //
-//  Created by Bret Clemetson on 1/7/26.
-//
-
 
 import SwiftUI
 
 struct WeeklyChallengesOverallLeaderboardView: View {
-    @ObservedObject var store: WeeklyChallengesOverallStore
+    @ObservedObject var store: WeeklyOverallStore
+
+    @State private var mode: WeeklyGroupMode = .players
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Overall Weekly Leaderboard")
-                .font(.title2.bold())
+        VStack(spacing: 0) {
 
-            if store.isLoading {
-                ProgressView("Loading...")
-            } else if let err = store.errorMessage {
-                Text("Couldn’t load: \(err)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else if store.rows.isEmpty {
-                Text("No scores yet. They’ll appear after the first week is scored.")
-                    .foregroundStyle(.secondary)
-            } else {
-                List {
-                    ForEach(Array(store.rows.enumerated()), id: \.element.id) { idx, row in
-                        HStack {
-                            Text("\(idx + 1)")
-                                .frame(width: 26, alignment: .leading)
+            HStack {
+                Text("Overall Weekly")
+                    .font(.title2.bold())
 
-                            Text(row.displayName)
-                            Spacer()
+                Spacer()
 
-                            Text("\(row.totalPoints)")
-                                .frame(width: 50, alignment: .trailing)
-                        }
-                        .listRowBackground(Color.clear)
+                Picker("", selection: $mode) {
+                    ForEach(WeeklyGroupMode.allCases, id: \.self) { m in
+                        Text(m.rawValue).tag(m)
                     }
                 }
-                .listStyle(.plain)
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+
+                Button {
+                    store.refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .padding(.leading, 8)
+                .accessibilityLabel("Refresh overall")
             }
+            .padding(.horizontal)
+            .padding(.top, 10)
+
+            Divider().opacity(0.35)
+                .padding(.top, 8)
+
+            Group {
+                if store.isLoading {
+                    ProgressView("Calculating totals…")
+                        .padding()
+
+                } else if let err = store.errorMessage {
+                    VStack(spacing: 10) {
+                        Text("Couldn’t load overall leaderboard")
+                            .font(.headline)
+                        Text(err)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button("Try Again") { store.refresh() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    .padding()
+
+                } else if rows.isEmpty {
+                    Text("No scores yet. They’ll appear after the first week is scored.")
+                        .foregroundStyle(.secondary)
+                        .padding()
+
+                } else {
+                    List {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
+                            HStack {
+                                Text("\(idx + 1)")
+                                    .frame(width: 28, alignment: .leading)
+                                    .foregroundStyle(.secondary)
+
+                                Text(row.displayName)
+                                    .fontWeight(.semibold)
+
+                                Spacer()
+
+                                Text("\(row.score)")
+                                    .fontWeight(.semibold)
+                                    .frame(width: 60, alignment: .trailing)
+                            }
+                            .padding(.vertical, 6)
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onAppear { store.refresh() }
+    }
+
+    private var rows: [WeeklyScoreRow] {
+        switch mode {
+        case .players: return store.playersRows
+        case .admins:  return store.adminsRows
         }
     }
 }

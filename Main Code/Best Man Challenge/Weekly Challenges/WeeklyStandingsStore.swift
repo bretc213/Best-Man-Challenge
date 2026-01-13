@@ -1,103 +1,65 @@
-//
-//  WeeklyChallengeStandingsStore.swift
-//  Best Man Challenge
-//
-//  Created by Bret Clemetson on 1/7/26.
-//  Updated on 1/7/26: merge roster (players) + submissions so everyone shows.
-//
-
 import Foundation
 import FirebaseFirestore
 
-struct WeeklyStandingRow: Identifiable {
-    let id: String              // linkedPlayerId
-    let linkedPlayerId: String
-    let displayName: String
-    let score: Int
-    let maxScore: Int
-    let submittedAt: Date?      // nil if not submitted yet
-    let hasSubmitted: Bool
-}
+// ✅ Backwards compatibility with any old views still referencing the old store name
+typealias WeeklyChallengeStandingsStore = WeeklyStandingsStore
 
 @MainActor
-final class WeeklyChallengeStandingsStore: ObservableObject {
-    @Published var rows: [WeeklyStandingRow] = []
-    @Published var isLoading = false
+final class WeeklyStandingsStore: ObservableObject {
+
+    @Published var playersRows: [WeeklyScoreRow] = []
+    @Published var adminsRows: [WeeklyScoreRow] = []
+    @Published var isLoading: Bool = false
     @Published var errorMessage: String?
 
     private let db = Firestore.firestore()
-
-    private var playersListener: ListenerRegistration?
     private var submissionsListener: ListenerRegistration?
 
-    // Internal caches
-    private var rosterById: [String: String] = [:]                 // playerId -> display_name
-    private var submissionById: [String: (score: Int, max: Int, submittedAt: Date?)] = [:]
+    // (We still load this, but we are NOT using role for bucketing anymore.)
+    private var roleByUID: [String: String] = [:]
 
-    func startListening(weekId: String, defaultMaxScore: Int = 0) {
-        stopListening()
-        errorMessage = nil
-        isLoading = true
-
-        listenPlayers()
-        listenSubmissions(weekId: weekId, defaultMaxScore: defaultMaxScore)
+    deinit {
+        submissionsListener?.remove()
     }
 
     func stopListening() {
-        playersListener?.remove()
         submissionsListener?.remove()
-        playersListener = nil
         submissionsListener = nil
-
-        rosterById = [:]
-        submissionById = [:]
-
-        isLoading = false
     }
 
-    // MARK: - Listeners
+    func startListening(activeChallengeId: String) {
+        stopListening()
 
-    private func listenPlayers() {
-        playersListener?.remove()
+        isLoading = true
+        errorMessage = nil
+        playersRows = []
+        adminsRows = []
 
-        playersListener = db.collection("players")
-            .addSnapshotListener { [weak self] snap, err in
-                guard let self else { return }
+        Task {
+            await loadAccountsIndex()
+            listenToSubmissions(challengeId: activeChallengeId)
+        }
+    }
 
-                if let err {
-                    Task { @MainActor in
-                        self.errorMessage = err.localizedDescription
-                        self.isLoading = false
-                    }
-                    return
-                }
-
-                let docs = snap?.documents ?? []
-                var roster: [String: String] = [:]
-
-                for doc in docs {
-                    let d = doc.data()
-                    let id = doc.documentID
-                    let name =
-                        (d["display_name"] as? String)
-                        ?? (d["displayName"] as? String)
-                        ?? (d["name"] as? String)
-                        ?? id
-                    roster[id] = name
-                }
-
-                Task { @MainActor in
-                    self.rosterById = roster
-                    self.rebuildRows()
-                }
+    private func loadAccountsIndex() async {
+        do {
+            let snap = try await db.collection("accounts").getDocuments()
+            var map: [String: String] = [:]
+            for doc in snap.documents {
+                let data = doc.data()
+                let uid = (data["claimed_by_uid"] as? String) ?? ""
+                let role = (data["role"] as? String ?? "").lowercased()
+                if !uid.isEmpty { map[uid] = role }
             }
+            roleByUID = map
+        } catch {
+            roleByUID = [:]
+        }
     }
 
-    private func listenSubmissions(weekId: String, defaultMaxScore: Int) {
-        submissionsListener?.remove()
-
+    private func listenToSubmissions(challengeId: String) {
         submissionsListener = db.collection("weekly_challenges")
-            .document(weekId)
+            .document(challengeId)
             .collection("submissions")
             .addSnapshotListener { [weak self] snap, err in
                 guard let self else { return }
@@ -111,89 +73,62 @@ final class WeeklyChallengeStandingsStore: ObservableObject {
                 }
 
                 let docs = snap?.documents ?? []
-                var subs: [String: (score: Int, max: Int, submittedAt: Date?)] = [:]
 
-                for doc in docs {
-                    let d = doc.data()
+                var players: [WeeklyScoreRow] = []
+                var admins: [WeeklyScoreRow] = []
 
-                    // Doc id SHOULD be linkedPlayerId once you apply the manager fix.
-                    // If you still have old uid-based docs, we fallback to linked_player_id.
-                    let linkedId =
-                        (d["linked_player_id"] as? String)
-                        ?? doc.documentID
+                for d in docs {
+                    let data = d.data()
 
-                    let score = d["score"] as? Int ?? 0
-                    let maxScore = (d["maxScore"] as? Int) ?? (d["max_score"] as? Int) ?? defaultMaxScore
+                    let score = data["score"] as? Int ?? 0
+                    let maxScore = (data["maxScore"] as? Int) ?? (data["max_score"] as? Int)
+
+                    let dn =
+                        (data["display_name"] as? String)
+                        ?? (data["displayName"] as? String)
+                        ?? "Unknown"
+
+                    let rawLP = data["linked_player_id"] as? String
+                    let uid = (data["uid"] as? String) ?? d.documentID
 
                     let submittedAt =
-                        (d["submittedAt"] as? Timestamp)?.dateValue()
-                        ?? (d["submitted_at"] as? Timestamp)?.dateValue()
+                        (data["submittedAt"] as? Timestamp)?.dateValue()
+                        ?? (data["submitted_at"] as? Timestamp)?.dateValue()
 
-                    subs[linkedId] = (score: score, max: maxScore, submittedAt: submittedAt)
+                    let row = WeeklyScoreRow(
+                        id: uid,
+                        displayName: dn,
+                        linkedPlayerId: rawLP,
+                        score: score,
+                        maxScore: maxScore,
+                        submittedAt: submittedAt
+                    )
+
+                    // ✅ Bucket rule for weekly leaderboards:
+                    // If linked_player_id exists -> treat as PLAYER (includes you even if role is owner)
+                    let cleanedLP = (rawLP ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let isPlayerBucket = !cleanedLP.isEmpty
+
+                    if isPlayerBucket {
+                        players.append(row)
+                    } else {
+                        admins.append(row)
+                    }
+                }
+
+                func sortRows(_ rows: [WeeklyScoreRow]) -> [WeeklyScoreRow] {
+                    rows.sorted {
+                        if $0.score != $1.score { return $0.score > $1.score }
+                        return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+                    }
                 }
 
                 Task { @MainActor in
-                    self.submissionById = subs
-                    self.rebuildRows()
+                    self.playersRows = sortRows(players)
+                    self.adminsRows = sortRows(admins)
+                    self.isLoading = false
+                    self.errorMessage = nil
                 }
             }
-    }
-
-    // MARK: - Merge + sort
-
-    private func rebuildRows() {
-        // If roster is empty, we can still show submissions-only rows
-        // but in your case you want all players, so roster should exist.
-        var merged: [WeeklyStandingRow] = []
-
-        if !rosterById.isEmpty {
-            for (playerId, name) in rosterById {
-                let sub = submissionById[playerId]
-                merged.append(
-                    WeeklyStandingRow(
-                        id: playerId,
-                        linkedPlayerId: playerId,
-                        displayName: name,
-                        score: sub?.score ?? 0,
-                        maxScore: sub?.max ?? 0,
-                        submittedAt: sub?.submittedAt,
-                        hasSubmitted: sub != nil
-                    )
-                )
-            }
-        } else {
-            // Fallback: show submission docs if roster collection not available
-            for (playerId, sub) in submissionById {
-                merged.append(
-                    WeeklyStandingRow(
-                        id: playerId,
-                        linkedPlayerId: playerId,
-                        displayName: playerId,
-                        score: sub.score,
-                        maxScore: sub.max,
-                        submittedAt: sub.submittedAt,
-                        hasSubmitted: true
-                    )
-                )
-            }
-        }
-
-        // Sort rules (feel free to tweak):
-        // 1) higher score first
-        // 2) submitted players above non-submitted when tied
-        // 3) name alphabetical
-        // 4) earlier submission breaks ties (optional)
-        merged.sort { a, b in
-            if a.score != b.score { return a.score > b.score }
-            if a.hasSubmitted != b.hasSubmitted { return a.hasSubmitted && !b.hasSubmitted }
-            if a.displayName != b.displayName { return a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending }
-
-            let aDate = a.submittedAt ?? Date.distantFuture
-            let bDate = b.submittedAt ?? Date.distantFuture
-            return aDate < bDate
-        }
-
-        self.rows = merged
-        self.isLoading = false
     }
 }

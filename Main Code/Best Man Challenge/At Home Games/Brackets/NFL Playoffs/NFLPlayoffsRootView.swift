@@ -24,10 +24,16 @@ struct NFLPlayoffsRootView: View {
         bracketId: "nfl_2026_playoffs"
     )
 
+    // ✅ Futures store reads from picks/wildcard and is constant regardless of selectedRound
+    @StateObject private var futuresStore = NFLFuturesStore(
+        bracketId: "nfl_2026_playoffs"
+    )
+
     enum Tab: String, CaseIterable {
         case picks = "Picks"
         case myPicks = "All Picks"
-        case leaderboard = "Leaderboard"
+        case futures = "Futures"
+        case leaderboard = "Standings"
         case admin = "Admin"
     }
 
@@ -56,6 +62,15 @@ struct NFLPlayoffsRootView: View {
 
             case .myPicks:
                 NFLAllPicksView(store: picksStore, session: session)
+
+            case .futures:
+                // ✅ Constant screen: not tied to selectedRound
+                // teamName: for now just show abbreviation (e.g., "LAR").
+                // Later you can map to full names/logos.
+                NFLFuturesView(
+                    futuresStore: futuresStore,
+                    teamName: { abbrev in abbrev }
+                )
 
             case .leaderboard:
                 NFLBracketLeaderboardView(scoresStore: scoresStore, session: session)
@@ -123,5 +138,7 @@ struct NFLPlayoffsRootView: View {
 
         // Start leaderboard listener
         scoresStore.startListening()
+
+        // ✅ futuresStore starts listening in its init; nothing needed here
     }
 }

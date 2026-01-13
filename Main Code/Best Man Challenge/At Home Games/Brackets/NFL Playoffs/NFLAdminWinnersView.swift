@@ -3,10 +3,13 @@
 //  Best Man Challenge
 //
 //  Admin tool: set/clear winners for matchups.
+//  Access restricted to roles: ref, commish, owner
 //
 
 import SwiftUI
 import FirebaseFirestore
+import FirebaseAuth
+
 
 struct NFLAdminWinnersView: View {
     @ObservedObject var store: NFLPlayoffsPicksStore
@@ -16,82 +19,173 @@ struct NFLAdminWinnersView: View {
     @State private var isSaving: Bool = false
     @State private var toast: String?
 
+    // Access control
+    @State private var isCheckingAccess: Bool = true
+    @State private var isAuthorized: Bool = false
+    @State private var accessError: String?
+
     private let rounds: [BracketRound] = [.wildcard, .divisional, .conference, .superBowl]
+    private let allowedRoles: Set<String> = ["ref", "commish", "owner"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-
-            Text("Admin")
-                .font(.title2.bold())
-
-            Text("Set winners to score everyone’s picks. Updates should reflect in the leaderboard immediately.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            Picker("Round", selection: $selectedRound) {
-                ForEach(rounds, id: \.self) { r in
-                    Text(roundTitle(r)).tag(r)
+        Group {
+            if isCheckingAccess {
+                VStack(spacing: 12) {
+                    ProgressView("Checking access...")
+                    Text("Verifying admin permissions.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
-            }
-            .pickerStyle(.segmented)
-            .onAppear {
-                selectedRound = BracketRound(rawValue: store.roundId) ?? .wildcard
-            }
-            .onChange(of: selectedRound) { _, newValue in
-                store.setRound(newValue.rawValue)
-            }
+                .padding()
 
-            if let msg = toast {
-                Text(msg)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            } else if !isAuthorized {
+                VStack(spacing: 12) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 28, weight: .bold))
 
-            if store.isLoading {
-                ProgressView("Loading matchups...")
-                    .padding(.top, 8)
+                    Text("Admins Only")
+                        .font(.title3.bold())
 
-            } else if let err = store.errorMessage {
-                Text("Couldn’t load: \(err)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 8)
-
-            } else if store.matchups.isEmpty {
-                Text("No matchups found for this round.")
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 8)
+                    Text(accessError ?? "You don’t have permission to access this page.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
 
             } else {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        ForEach(store.matchups, id: \.id) { matchup in
-                            AdminMatchupWinnerCard(
-                                matchup: matchup,
-                                isSaving: isSaving,
-                                onSetWinner: { teamId in
-                                    Task { await setWinner(matchup: matchup, winnerTeamId: teamId) }
-                                },
-                                onClearWinner: {
-                                    Task { await clearWinner(matchup: matchup) }
-                                }
-                            )
+                // ✅ Authorized UI
+                VStack(alignment: .leading, spacing: 12) {
+
+                    Text("Admin")
+                        .font(.title2.bold())
+
+                    Text("Set winners to score everyone’s picks. Updates should reflect in the leaderboard immediately.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Picker("Round", selection: $selectedRound) {
+                        ForEach(rounds, id: \.self) { r in
+                            Text(roundTitle(r)).tag(r)
                         }
                     }
-                    .padding(.top, 4)
-                    .padding(.bottom, 12)
+                    .pickerStyle(.segmented)
+                    .onAppear {
+                        selectedRound = BracketRound(rawValue: store.roundId) ?? .wildcard
+                    }
+                    .onChange(of: selectedRound) { _, newValue in
+                        store.setRound(newValue.rawValue)
+                    }
+
+                    if let msg = toast {
+                        Text(msg)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if store.isLoading {
+                        ProgressView("Loading matchups...")
+                            .padding(.top, 8)
+
+                    } else if let err = store.errorMessage {
+                        Text("Couldn’t load: \(err)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 8)
+
+                    } else if store.matchups.isEmpty {
+                        Text("No matchups found for this round.")
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 8)
+
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                ForEach(store.matchups, id: \.id) { matchup in
+                                    AdminMatchupWinnerCard(
+                                        matchup: matchup,
+                                        isSaving: isSaving,
+                                        onSetWinner: { teamId in
+                                            Task { await setWinner(matchup: matchup, winnerTeamId: teamId) }
+                                        },
+                                        onClearWinner: {
+                                            Task { await clearWinner(matchup: matchup) }
+                                        }
+                                    )
+                                }
+                            }
+                            .padding(.top, 4)
+                            .padding(.bottom, 12)
+                        }
+                    }
                 }
+                .padding(.top, 8)
+                .padding(.horizontal)
             }
         }
-        .padding(.top, 8)
-        .padding(.horizontal)
+        .task {
+            await checkAdminAccess()
+        }
     }
+
+    // MARK: - Access check
+
+    @MainActor
+    private func checkAdminAccess() async {
+        
+        isCheckingAccess = true
+        isAuthorized = false
+        accessError = nil
+
+        guard let uid = Auth.auth().currentUser?.uid else {
+            accessError = "You must be signed in."
+            isCheckingAccess = false
+            return
+        }
+
+        do {
+            let db = Firestore.firestore()
+
+            let snap = try await db.collection("accounts")
+                .whereField("claimed_by_uid", isEqualTo: uid)
+                .limit(to: 1)
+                .getDocuments()
+
+            guard let doc = snap.documents.first,
+                  let role = (doc.data()["role"] as? String)?
+                    .lowercased()
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            else {
+                accessError = "No linked account found."
+                isCheckingAccess = false
+                return
+            }
+
+            let allowedRoles: Set<String> = ["ref", "commish", "owner"]
+            isAuthorized = allowedRoles.contains(role)
+
+            if !isAuthorized {
+                accessError = "Your role (\(role)) does not have admin permissions."
+            }
+
+        } catch {
+            accessError = "Failed to verify permissions: \(error.localizedDescription)"
+        }
+
+        isCheckingAccess = false
+    }
+
 
     // MARK: - Firestore writes
 
     @MainActor
     private func setWinner(matchup: BracketMatchup, winnerTeamId: String) async {
+        guard isAuthorized else {
+            toast = "You don’t have permission to do that."
+            return
+        }
         guard !winnerTeamId.isEmpty else { return }
+
         isSaving = true
         toast = nil
 
@@ -119,6 +213,11 @@ struct NFLAdminWinnersView: View {
 
     @MainActor
     private func clearWinner(matchup: BracketMatchup) async {
+        guard isAuthorized else {
+            toast = "You don’t have permission to do that."
+            return
+        }
+
         isSaving = true
         toast = nil
 

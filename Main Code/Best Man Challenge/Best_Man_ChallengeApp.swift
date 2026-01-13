@@ -5,6 +5,7 @@
 //  Created by Bret Clemetson on 5/23/25.
 //
 
+
 import SwiftUI
 import Firebase
 
@@ -16,26 +17,6 @@ struct BestManChallengeApp: App {
     init() {
         FirebaseApp.configure()
 
-        // ✅ DEV ONLY: seed the test Sudoku → key → cipher → riddle doc once
-        // Run the app one time, confirm Firestore updated, then comment this Task out.
-        /*Task {
-            do {
-                try await WeeklyChallengeSeeder.seedTestCipherRiddleWeek()
-            } catch {
-                print("❌ WeeklyChallengeSeeder failed: \(error.localizedDescription)")
-            }
-         
-        Task {
-            do {
-                try await WeeklyChallengeSeeder2026W01.seedQuiz()
-            } catch {
-                print("❌ seedQuiz failed: \(error.localizedDescription)")
-            }
-        }
-         }*/
-
-         
-
         let navAppearance = UINavigationBarAppearance()
         navAppearance.configureWithOpaqueBackground()
         navAppearance.backgroundColor = UIColor(Color.background)
@@ -44,7 +25,7 @@ struct BestManChallengeApp: App {
         UINavigationBar.appearance().standardAppearance = navAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
         UINavigationBar.appearance().compactAppearance = navAppearance
-        UINavigationBar.appearance().tintColor = UIColor(Color.accent) // for buttons
+        UINavigationBar.appearance().tintColor = UIColor(Color.accent)
     }
 
     var body: some Scene {
@@ -57,17 +38,19 @@ struct BestManChallengeApp: App {
                             .foregroundStyle(Color.textPrimary)
                     }
                 } else if session.firebaseUser == nil {
-                    // Not signed in yet → Claim / Sign In flow
                     ClaimAccountView()
                 } else {
-                    // Signed in → Main app
                     MainTabView()
                 }
             }
-            .environmentObject(session)      // ✅ Step 7: app-wide session access
-            .preferredColorScheme(.dark)     // 🔥 Enforces dark mode app-wide
+            .environmentObject(session)
+            .preferredColorScheme(.dark)
             .onAppear {
                 session.start()
+            }
+            // ✅ DEV ONLY: runs once due to the UserDefaults + Firestore existence guards
+            .task {
+                await WeeklyChallengeSeeder2026W02.seedIfNeeded()
             }
         }
     }

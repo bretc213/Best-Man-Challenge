@@ -2,9 +2,6 @@
 //  WeeklyQuizPlayView.swift
 //  Best Man Challenge
 //
-//  Created by Bret Clemetson on 1/8/26.
-//
-
 
 import SwiftUI
 
@@ -18,6 +15,11 @@ struct WeeklyQuizPlayView: View {
     @State private var isSubmitting = false
     @State private var errorText: String?
 
+    // ✅ Lock after endDate
+    private var isLocked: Bool {
+        Date() >= challenge.endDate
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -25,6 +27,16 @@ struct WeeklyQuizPlayView: View {
                 Text(challenge.title)
                     .font(.title2)
                     .bold()
+
+                if isLocked {
+                    Text("🔒 This quiz is locked.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else if isPendingScoring {
+                    Text("✅ Your picks will be scored after the games finish.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
 
                 if let questions = challenge.quiz?.questions, !questions.isEmpty {
                     ForEach(questions, id: \.id) { q in
@@ -34,11 +46,11 @@ struct WeeklyQuizPlayView: View {
                     Button {
                         Task { await submit() }
                     } label: {
-                        Text(isSubmitting ? "Submitting…" : "Submit Quiz")
+                        Text(isSubmitting ? "Submitting…" : (isLocked ? "Locked" : "Submit Quiz"))
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isSubmitting)
+                    .disabled(isSubmitting || isLocked)
 
                 } else {
                     Text("No quiz questions found for this challenge.")
@@ -57,6 +69,11 @@ struct WeeklyQuizPlayView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    private var isPendingScoring: Bool {
+        guard let questions = challenge.quiz?.questions, !questions.isEmpty else { return false }
+        return questions.contains(where: { $0.correct_index == nil })
+    }
+
     private func questionCard(_ q: WeeklyQuizQuestion) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(q.prompt)
@@ -64,6 +81,8 @@ struct WeeklyQuizPlayView: View {
 
             ForEach(Array(q.options.enumerated()), id: \.offset) { idx, opt in
                 Button {
+                    // ✅ Don’t allow changes after lock
+                    guard !isLocked else { return }
                     selections[q.id] = idx
                 } label: {
                     HStack {
@@ -71,9 +90,11 @@ struct WeeklyQuizPlayView: View {
                         Text(opt)
                         Spacer()
                     }
+                    .opacity(isLocked ? 0.65 : 1.0)
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 4)
+                .disabled(isLocked)
             }
         }
         .padding()
@@ -82,6 +103,12 @@ struct WeeklyQuizPlayView: View {
     }
 
     private func submit() async {
+        // ✅ Hard enforcement lock (important)
+        if isLocked {
+            errorText = "This quiz is locked."
+            return
+        }
+
         guard let lp = manager.linkedPlayerId, let dn = manager.displayName else {
             errorText = "You are not linked to a player yet."
             return
@@ -91,12 +118,24 @@ struct WeeklyQuizPlayView: View {
             return
         }
 
-        // score
-        var score = 0
+        // ✅ Require all questions answered
         for q in questions {
-            if selections[q.id] == q.correct_index { score += 1 }
+            if selections[q.id] == nil {
+                errorText = "Please answer all questions before submitting."
+                return
+            }
         }
+
+        var score = 0
         let maxScore = questions.count
+
+        if !isPendingScoring {
+            for q in questions {
+                if let correct = q.correct_index, selections[q.id] == correct {
+                    score += 1
+                }
+            }
+        }
 
         isSubmitting = true
         defer { isSubmitting = false }

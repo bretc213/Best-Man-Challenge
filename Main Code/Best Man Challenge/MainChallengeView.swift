@@ -8,8 +8,12 @@
 
 import SwiftUI
 
+
+
 struct MainChallengeView: View {
 
+    @EnvironmentObject var session: SessionStore
+    
     var body: some View {
         ThemedScreen {
             List {
@@ -33,27 +37,17 @@ struct MainChallengeView: View {
                             systemImage: "figure.run"
                         )
                     }
-
-                   /* NavigationLink {
-                        WeeklyChallengesHubView()
+                    
+                    NavigationLink {
+                        WeeklyChallengesRootView()
                     } label: {
                         hubRow(
                             title: "Weekly Challenges",
                             subtitle: "New weekly challenge when active",
                             systemImage: "flame.fill"
                         )
-                    } */
-                    
-                    // 🚧 Weekly Challenges (TEMPORARILY DISABLED)
-                    NavigationLink {
-                        UnderConstructionView(title: "Weekly Challenges")
-                    } label: {
-                        hubRow(
-                            title: "Weekly Challenges",
-                            subtitle: "Play this week’s challenge",
-                            systemImage: "checklist"
-                        )
                     }
+
 
                 }
                 .listRowBackground(Color.clear)

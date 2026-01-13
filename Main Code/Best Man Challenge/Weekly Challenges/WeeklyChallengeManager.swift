@@ -36,8 +36,6 @@ final class WeeklyChallengeManager: ObservableObject {
     }
 
     deinit {
-        // ✅ IMPORTANT: Do NOT create Tasks in deinit.
-        // Removing the listener here is safe and synchronous.
         activeListener?.remove()
         activeListener = nil
     }
@@ -59,7 +57,6 @@ final class WeeklyChallengeManager: ObservableObject {
         self.linkedPlayerId = lp.isEmpty ? nil : lp
         self.displayName = dn.isEmpty ? nil : dn
 
-        // If we already have a challenge loaded, refresh lastSubmission immediately.
         if let cid = currentChallenge?.id, let lp = self.linkedPlayerId {
             loadMyLatestSubmissionIfPossible(challengeId: cid, linkedPlayerId: lp)
         } else {
@@ -161,9 +158,11 @@ final class WeeklyChallengeManager: ObservableObject {
                             guard
                                 let id = rq["id"] as? String,
                                 let prompt = rq["prompt"] as? String,
-                                let options = rq["options"] as? [String],
-                                let correctIndex = rq["correct_index"] as? Int
+                                let options = rq["options"] as? [String]
                             else { continue }
+
+                            // ✅ correct_index can be missing or null (NSNull)
+                            let correctIndex = rq["correct_index"] as? Int
 
                             questions.append(
                                 WeeklyQuizQuestion(
@@ -175,6 +174,7 @@ final class WeeklyChallengeManager: ObservableObject {
                             )
                         }
                     }
+
 
                     quiz = WeeklyChallengeQuiz(
                         points_per_correct: pointsPerCorrect,
@@ -201,7 +201,6 @@ final class WeeklyChallengeManager: ObservableObject {
                     self.currentChallenge = challenge
                     self.state = .loaded
 
-                    // Reload user's submission when challenge updates
                     if let lp = self.linkedPlayerId {
                         self.loadMyLatestSubmissionIfPossible(
                             challengeId: challenge.id,

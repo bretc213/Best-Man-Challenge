@@ -1,3 +1,5 @@
+// this doesn't run, task to run this seeder is commented out
+
 import FirebaseFirestore
 
 enum WeeklyChallengeSeeder2026W01 {
@@ -119,3 +121,4 @@ enum WeeklyChallengeSeeder2026W01 {
         print("✅ Seeded weekly_challenges/2026_w01 as quiz with required fields (overwritten).")
     }
 }
+
