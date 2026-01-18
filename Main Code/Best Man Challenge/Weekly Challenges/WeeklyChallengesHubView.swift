@@ -1,52 +1,64 @@
-//
-//  WeeklyChallengesHubView.swift
-//  Best Man Challenge
-//
-//  Created by Bret Clemetson on 1/2/26.
-//  Updated on 1/8/26: Navigate to WeeklyChallengesRootView (tabs), remove Week 1 hardcode.
-//
-
 import SwiftUI
 
 struct WeeklyChallengesHubView: View {
     @EnvironmentObject var session: SessionStore
 
+    // ✅ Own these once for the Weekly Challenges area
+    @StateObject private var weeklyManager = WeeklyChallengeManager()
+    @StateObject private var historyStore = WeeklyChallengesHistoryStore()
+
     var body: some View {
         ThemedScreen {
             List {
-                Section {
+                Section("Weekly Challenges") {
 
-                    // ✅ Main entry point now goes to the tabbed root
                     NavigationLink {
                         WeeklyChallengesRootView()
                             .environmentObject(session)
-                            .environmentObject(WeeklyChallengeManager())
-
+                            .environmentObject(weeklyManager)
                     } label: {
                         hubRow(
-                            title: "Weekly Challenge",
-                            subtitle: "Current challenge, standings, past weeks, and overall leaderboard",
-                            systemImage: "checklist"
+                            title: "This Week",
+                            subtitle: "Current challenge, how to play, and standings",
+                            systemImage: "flame.fill"
                         )
                     }
+
+                   /* NavigationLink {
+                        WeeklyChallengesPastListView(store: historyStore)
+                            .environmentObject(session)
+                            .environmentObject(weeklyManager)
+                    } label: {
+                        hubRow(
+                            title: "Past Weeks",
+                            subtitle: "View prior weekly challenges and results",
+                            systemImage: "clock.arrow.circlepath"
+                        )
+                    }*/
                     
-
-
-                    // OPTIONAL: Keep this if you still want a direct link to Week 1 standings.
-                    // But it will become stale, so I recommend removing it once Overall/Past are live.
+                    // Currently using this under construction link for past weekly challenges, should go back to the past list view when working
                     NavigationLink {
-                        WeeklyChallengeLeaderboardView(
-                            weekId: "2026_w01",
-                            title: "Week 1 Standings"
+                        UnderConstructionView(
                         )
                     } label: {
                         hubRow(
-                            title: "Week 1 Standings (Legacy)",
-                            subtitle: "Direct link (will be removed later)",
-                            systemImage: "list.number"
+                            title: "Past Weeks",
+                            subtitle: "View prior weekly challenges and results",
+                            systemImage: "clock.arrow.circlepath"
                         )
                     }
 
+
+                    NavigationLink {
+                        WeeklyOverallLeaderboardView()
+                            .environmentObject(session)
+                    } label: {
+                        hubRow(
+                            title: "Overall Leaderboard",
+                            subtitle: "Total points across all weekly challenges",
+                            systemImage: "trophy.fill"
+                        )
+                    }
                 }
                 .listRowBackground(Color.clear)
             }
@@ -87,12 +99,5 @@ struct WeeklyChallengesHubView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 6)
-    }
-}
-
-#Preview {
-    NavigationView {
-        WeeklyChallengesHubView()
-            .environmentObject(SessionStore()) // Preview helper
     }
 }

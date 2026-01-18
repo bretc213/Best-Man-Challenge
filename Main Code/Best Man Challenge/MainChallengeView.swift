@@ -38,7 +38,18 @@ struct MainChallengeView: View {
                     }
 
                     // ✅ Inject env objects for Weekly Challenges
+                    
                     NavigationLink {
+                        WeeklyChallengesHubView()
+                    } label: {
+                        hubRow(
+                            title: "Weekly Challenges",
+                            subtitle: "New weekly challenge when active",
+                            systemImage: "flame.fill"
+                            )
+                    }
+
+                    /*NavigationLink {
                         WeeklyChallengesRootView()
                             .environmentObject(session)
                             .environmentObject(weeklyChallengeManager)
@@ -48,7 +59,7 @@ struct MainChallengeView: View {
                             subtitle: "New weekly challenge when active",
                             systemImage: "flame.fill"
                         )
-                    }
+                    }*/
 
                 }
                 .listRowBackground(Color.clear)

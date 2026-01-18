@@ -146,13 +146,37 @@ struct WeeklyChallengeView: View {
             Text("Submitted \(submission.submittedAt.formatted(date: .abbreviated, time: .shortened))")
                 .foregroundStyle(.secondary)
 
-            if let score = submission.score {
+            // ✅ Score display that respects pending scoring (correct_index == nil)
+            if let answers = submission.answers,
+               let questions = challenge.quiz?.questions,
+               !questions.isEmpty {
+
+                let pointsPerCorrect = challenge.quiz?.points_per_correct ?? 1
+                let scorableQuestions = questions.filter { $0.correct_index != nil }
+                let scorableMax = scorableQuestions.count * pointsPerCorrect
+
+                let scorableScore: Int = scorableQuestions.reduce(0) { partial, q in
+                    guard let correct = q.correct_index else { return partial }
+                    let picked = answers[q.id]
+                    return partial + ((picked == correct) ? pointsPerCorrect : 0)
+                }
+
+                if scorableMax > 0 {
+                    Text("Score: \(scorableScore)/\(scorableMax)")
+                } else {
+                    Text("Score: Pending")
+                        .foregroundStyle(.secondary)
+                }
+
+            } else if let score = submission.score {
+                // Fallback for non-quiz submissions or older docs
                 if let max = submission.maxScore {
                     Text("Score: \(score)/\(max)")
                 } else {
                     Text("Score: \(score)")
                 }
             }
+
 
             if isPendingScoring(challenge) {
                 Text("Scoring will be applied after the games finish.")

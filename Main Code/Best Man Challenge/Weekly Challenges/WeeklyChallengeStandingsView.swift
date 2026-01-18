@@ -66,7 +66,7 @@ struct WeeklyChallengeStandingsView: View {
 
                 } else {
                     List {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
+                        ForEach(Array(rankedRows.enumerated()), id: \.element.id) { idx, row in
                             HStack {
                                 Text("\(idx + 1)")
                                     .frame(width: 28, alignment: .leading)
@@ -77,13 +77,15 @@ struct WeeklyChallengeStandingsView: View {
 
                                 Spacer()
 
-                                if let max = row.maxScore, max > 0 {
-                                    Text("\(row.score)/\(max)")
+                                // ✅ Prefer "scorable" display if we can compute it
+                                if let scorable = scorableDisplay(for: row), scorable.max > 0 {
+                                    Text("\(scorable.score) pts")
                                         .fontWeight(.semibold)
                                 } else {
-                                    Text("\(row.score)")
+                                    Text("\(row.score) pts")
                                         .fontWeight(.semibold)
                                 }
+
                             }
                             .padding(.vertical, 6)
                         }
@@ -103,6 +105,38 @@ struct WeeklyChallengeStandingsView: View {
         case .players: return store.playersRows
         case .admins:  return store.adminsRows
         }
+    }
+    
+    private var rankedRows: [WeeklyScoreRow] {
+        rows.sorted {
+            let a = scorableDisplay(for: $0)?.score ?? $0.score
+            let b = scorableDisplay(for: $1)?.score ?? $1.score
+            if a != b { return a > b }
+            return $0.displayName < $1.displayName
+        }
+    }
+
+
+    // MARK: - ✅ Scorable score/max (only counts questions with correct_index != nil)
+
+    private func scorableDisplay(for row: WeeklyScoreRow) -> (score: Int, max: Int)? {
+        guard
+            let answers = row.answers,
+            let questions = manager.currentChallenge?.quiz?.questions,
+            !questions.isEmpty
+        else { return nil }
+
+        let pointsPerCorrect = manager.currentChallenge?.quiz?.points_per_correct ?? 1
+        let scorableQuestions = questions.filter { $0.correct_index != nil }
+        let scorableMax = scorableQuestions.count * pointsPerCorrect
+
+        let scorableScore: Int = scorableQuestions.reduce(0) { partial, q in
+            guard let correct = q.correct_index else { return partial }
+            let picked = answers[q.id]
+            return partial + ((picked == correct) ? pointsPerCorrect : 0)
+        }
+
+        return (scorableScore, scorableMax)
     }
 
     private func startIfPossible() {

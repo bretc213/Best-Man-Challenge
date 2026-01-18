@@ -23,8 +23,6 @@ struct WeeklyChallengesRootView: View {
         }
     }
 
-    // MARK: - Small pieces (helps compiler)
-
     private var tabPicker: some View {
         Picker("", selection: $tab) {
             ForEach(Tab.allCases, id: \.self) { t in
@@ -46,38 +44,13 @@ struct WeeklyChallengesRootView: View {
                 .environmentObject(session)
 
         case .howToPlay:
-            WeeklyHowToPlayPlaceholder()
-                .padding(.horizontal)
-                .padding(.top, 8)
+            WeeklyHowToPlayView()
+                .environmentObject(challengeManager)
+                .environmentObject(session)
 
         case .standings:
-            WeeklyStandingsPlaceholder()
-                .padding(.horizontal)
-                .padding(.top, 8)
-        }
-    }
-}
-
-// MARK: - Placeholders (swap back to your real views later)
-
-private struct WeeklyHowToPlayPlaceholder: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("How To Play")
-                .font(.title3.bold())
-            Text("Hook this up to your How-To-Play view when ready.")
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-private struct WeeklyStandingsPlaceholder: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Standings")
-                .font(.title3.bold())
-            Text("Hook this up to your Weekly Standings view when ready.")
-                .foregroundStyle(.secondary)
+            WeeklyChallengeStandingsView()
+                .environmentObject(challengeManager)
         }
     }
 }

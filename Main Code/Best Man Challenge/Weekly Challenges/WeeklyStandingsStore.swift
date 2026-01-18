@@ -1,31 +1,16 @@
 import Foundation
 import FirebaseFirestore
 
-// ✅ Backwards compatibility with any old views still referencing the old store name
-typealias WeeklyChallengeStandingsStore = WeeklyStandingsStore
-
 @MainActor
 final class WeeklyStandingsStore: ObservableObject {
-
     @Published var playersRows: [WeeklyScoreRow] = []
     @Published var adminsRows: [WeeklyScoreRow] = []
+
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
 
     private let db = Firestore.firestore()
-    private var submissionsListener: ListenerRegistration?
-
-    // (We still load this, but we are NOT using role for bucketing anymore.)
-    private var roleByUID: [String: String] = [:]
-
-    deinit {
-        submissionsListener?.remove()
-    }
-
-    func stopListening() {
-        submissionsListener?.remove()
-        submissionsListener = nil
-    }
+    private var listener: ListenerRegistration?
 
     func startListening(activeChallengeId: String) {
         stopListening()
@@ -35,31 +20,8 @@ final class WeeklyStandingsStore: ObservableObject {
         playersRows = []
         adminsRows = []
 
-        Task {
-            await loadAccountsIndex()
-            listenToSubmissions(challengeId: activeChallengeId)
-        }
-    }
-
-    private func loadAccountsIndex() async {
-        do {
-            let snap = try await db.collection("accounts").getDocuments()
-            var map: [String: String] = [:]
-            for doc in snap.documents {
-                let data = doc.data()
-                let uid = (data["claimed_by_uid"] as? String) ?? ""
-                let role = (data["role"] as? String ?? "").lowercased()
-                if !uid.isEmpty { map[uid] = role }
-            }
-            roleByUID = map
-        } catch {
-            roleByUID = [:]
-        }
-    }
-
-    private func listenToSubmissions(challengeId: String) {
-        submissionsListener = db.collection("weekly_challenges")
-            .document(challengeId)
+        listener = db.collection("weekly_challenges")
+            .document(activeChallengeId)
             .collection("submissions")
             .addSnapshotListener { [weak self] snap, err in
                 guard let self else { return }
@@ -77,58 +39,69 @@ final class WeeklyStandingsStore: ObservableObject {
                 var players: [WeeklyScoreRow] = []
                 var admins: [WeeklyScoreRow] = []
 
-                for d in docs {
-                    let data = d.data()
+                for doc in docs {
+                    let d = doc.data()
 
-                    let score = data["score"] as? Int ?? 0
-                    let maxScore = (data["maxScore"] as? Int) ?? (data["max_score"] as? Int)
+                    let id = doc.documentID
 
-                    let dn =
-                        (data["display_name"] as? String)
-                        ?? (data["displayName"] as? String)
-                        ?? "Unknown"
-
-                    let rawLP = data["linked_player_id"] as? String
-                    let uid = (data["uid"] as? String) ?? d.documentID
+                    let displayName =
+                        (d["display_name"] as? String)
+                        ?? (d["displayName"] as? String)
+                        ?? id
 
                     let submittedAt =
-                        (data["submittedAt"] as? Timestamp)?.dateValue()
-                        ?? (data["submitted_at"] as? Timestamp)?.dateValue()
+                        (d["submittedAt"] as? Timestamp)?.dateValue()
+                        ?? (d["submitted_at"] as? Timestamp)?.dateValue()
+
+                    let score =
+                        (d["score"] as? Int)
+                        ?? 0
+
+                    let maxScore =
+                        (d["maxScore"] as? Int)
+                        ?? (d["max_score"] as? Int)
+
+                    // ✅ NEW: parse answers (quiz submissions)
+                    let answers = d["answers"] as? [String: Int]
 
                     let row = WeeklyScoreRow(
-                        id: uid,
-                        displayName: dn,
-                        linkedPlayerId: rawLP,
+                        id: id,
+                        displayName: displayName,
                         score: score,
                         maxScore: maxScore,
+                        answers: answers,
                         submittedAt: submittedAt
                     )
 
-                    // ✅ Bucket rule for weekly leaderboards:
-                    // If linked_player_id exists -> treat as PLAYER (includes you even if role is owner)
-                    let cleanedLP = (rawLP ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    let isPlayerBucket = !cleanedLP.isEmpty
-
-                    if isPlayerBucket {
-                        players.append(row)
-                    } else {
+                    // ✅ Split admins vs players by doc id prefix
+                    // (admins write to admin_<uid>)
+                    if id.lowercased().hasPrefix("admin_") {
                         admins.append(row)
+                    } else {
+                        players.append(row)
                     }
                 }
 
-                func sortRows(_ rows: [WeeklyScoreRow]) -> [WeeklyScoreRow] {
-                    rows.sorted {
-                        if $0.score != $1.score { return $0.score > $1.score }
-                        return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-                    }
+                // Sort: highest score first, then name
+                players.sort {
+                    if $0.score != $1.score { return $0.score > $1.score }
+                    return $0.displayName < $1.displayName
+                }
+                admins.sort {
+                    if $0.score != $1.score { return $0.score > $1.score }
+                    return $0.displayName < $1.displayName
                 }
 
                 Task { @MainActor in
-                    self.playersRows = sortRows(players)
-                    self.adminsRows = sortRows(admins)
+                    self.playersRows = players
+                    self.adminsRows = admins
                     self.isLoading = false
-                    self.errorMessage = nil
                 }
             }
+    }
+
+    func stopListening() {
+        listener?.remove()
+        listener = nil
     }
 }
