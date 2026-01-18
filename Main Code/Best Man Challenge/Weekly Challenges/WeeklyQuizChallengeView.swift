@@ -5,7 +5,6 @@
 //  Created by Bret Clemetson on 1/2/26.
 //
 
-
 import SwiftUI
 
 struct WeeklyQuizChallengeView: View {
@@ -35,6 +34,7 @@ struct WeeklyQuizChallengeView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+
                     ForEach(questions) { q in
                         quizQuestionCard(q)
                     }
@@ -56,6 +56,7 @@ struct WeeklyQuizChallengeView: View {
                     .padding(.top, 8)
                 }
                 .padding(.top, 10)
+                .padding(.horizontal)
             }
 
         } else {
@@ -64,6 +65,7 @@ struct WeeklyQuizChallengeView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
             }
+            .padding(.horizontal)
         }
     }
 
@@ -98,7 +100,9 @@ struct WeeklyQuizChallengeView: View {
         var score = 0
 
         for q in questions {
-            if selected[q.id] == q.correct_index {
+            // ✅ correct_index can be nil (especially if admin hasn't populated it yet)
+            guard let correct = q.correct_index else { continue }
+            if selected[q.id] == correct {
                 score += pointsPerCorrect
             }
         }

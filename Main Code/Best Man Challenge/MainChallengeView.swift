@@ -5,15 +5,14 @@
 //  Created by Bret Clemetson on 1/2/26.
 //
 
-
 import SwiftUI
 
-
-
 struct MainChallengeView: View {
-
     @EnvironmentObject var session: SessionStore
-    
+
+    // ✅ Create once so it doesn't get recreated every navigation
+    @StateObject private var weeklyChallengeManager = WeeklyChallengeManager()
+
     var body: some View {
         ThemedScreen {
             List {
@@ -37,9 +36,12 @@ struct MainChallengeView: View {
                             systemImage: "figure.run"
                         )
                     }
-                    
+
+                    // ✅ Inject env objects for Weekly Challenges
                     NavigationLink {
                         WeeklyChallengesRootView()
+                            .environmentObject(session)
+                            .environmentObject(weeklyChallengeManager)
                     } label: {
                         hubRow(
                             title: "Weekly Challenges",
@@ -47,7 +49,6 @@ struct MainChallengeView: View {
                             systemImage: "flame.fill"
                         )
                     }
-
 
                 }
                 .listRowBackground(Color.clear)

@@ -26,6 +26,12 @@ final class WeeklyChallengeManager: ObservableObject {
     @Published private(set) var linkedPlayerId: String?
     @Published private(set) var displayName: String?
 
+    // ✅ NEW: submitter identity used for doc id in submissions
+    // - players: linkedPlayerId
+    // - admins without linked player: admin_<uid>
+    @Published private(set) var submitterId: String?
+    @Published private(set) var submitterDisplayName: String?
+
     private let db = Firestore.firestore()
 
     // ✅ Live listener for the active challenge
@@ -49,16 +55,47 @@ final class WeeklyChallengeManager: ObservableObject {
         startActiveChallengeListener()
     }
 
-    /// Call this once you have a logged-in session (e.g., onAppear).
-    func setUserContext(linkedPlayerId: String?, displayName: String?) {
+    // MARK: - User Context
+
+    private func computeSubmitterId(uid: String, linkedPlayerId: String?) -> String {
         let lp = (linkedPlayerId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !lp.isEmpty { return lp }
+        return "admin_\(uid)"
+    }
+
+    /// Call this once you have a logged-in session (e.g., onAppear).
+    /// Pass uid even for admins; linkedPlayerId may be nil.
+    func setUserContext(uid: String?, linkedPlayerId: String?, displayName: String?) {
         let dn = (displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let uidClean = (uid ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let lp = (linkedPlayerId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         self.linkedPlayerId = lp.isEmpty ? nil : lp
         self.displayName = dn.isEmpty ? nil : dn
 
-        if let cid = currentChallenge?.id, let lp = self.linkedPlayerId {
-            loadMyLatestSubmissionIfPossible(challengeId: cid, linkedPlayerId: lp)
+        guard !uidClean.isEmpty else {
+            self.submitterId = nil
+            self.submitterDisplayName = self.displayName
+            self.lastSubmission = nil
+            return
+        }
+
+        let sid = computeSubmitterId(uid: uidClean, linkedPlayerId: self.linkedPlayerId)
+        self.submitterId = sid
+
+        // If there's no display name (common for admins), use "Admin"
+        if let dn = self.displayName, !dn.isEmpty {
+            self.submitterDisplayName = dn
+        } else if sid.hasPrefix("admin_") {
+            self.submitterDisplayName = "Admin"
+        } else {
+            self.submitterDisplayName = sid
+        }
+
+        // Refresh last submission immediately if we already have an active challenge
+        if let cid = currentChallenge?.id, let sid = self.submitterId {
+            loadMyLatestSubmissionIfPossible(challengeId: cid, submitterId: sid)
         } else {
             self.lastSubmission = nil
         }
@@ -175,7 +212,6 @@ final class WeeklyChallengeManager: ObservableObject {
                         }
                     }
 
-
                     quiz = WeeklyChallengeQuiz(
                         points_per_correct: pointsPerCorrect,
                         questions: questions.isEmpty ? nil : questions
@@ -201,10 +237,11 @@ final class WeeklyChallengeManager: ObservableObject {
                     self.currentChallenge = challenge
                     self.state = .loaded
 
-                    if let lp = self.linkedPlayerId {
+                    // ✅ Load my submission using submitterId (linked player OR admin_<uid>)
+                    if let sid = self.submitterId {
                         self.loadMyLatestSubmissionIfPossible(
                             challengeId: challenge.id,
-                            linkedPlayerId: lp
+                            submitterId: sid
                         )
                     } else {
                         self.lastSubmission = nil
@@ -213,13 +250,13 @@ final class WeeklyChallengeManager: ObservableObject {
             }
     }
 
-    // MARK: - My Submission (by linkedPlayerId)
+    // MARK: - My Submission (by submitterId)
 
-    private func loadMyLatestSubmissionIfPossible(challengeId: String, linkedPlayerId: String) {
+    private func loadMyLatestSubmissionIfPossible(challengeId: String, submitterId: String) {
         db.collection("weekly_challenges")
             .document(challengeId)
             .collection("submissions")
-            .document(linkedPlayerId)
+            .document(submitterId)
             .getDocument { [weak self] snap, _ in
                 guard let self else { return }
                 guard let snap, snap.exists else {
@@ -233,16 +270,16 @@ final class WeeklyChallengeManager: ObservableObject {
                     ?? (data["submitted_at"] as? Timestamp)?.dateValue()
                     ?? Date()
 
-                let lp = data["linked_player_id"] as? String ?? linkedPlayerId
+                let lp = data["linked_player_id"] as? String
                 let dn = data["display_name"] as? String
+                let uid = data["uid"] as? String ?? ""
 
                 if let score = data["score"] as? Int {
                     let maxScore = (data["maxScore"] as? Int) ?? (data["max_score"] as? Int)
                     let answers = data["answers"] as? [String: Int]
-                    let uid = data["uid"] as? String ?? ""
 
                     let sub = WeeklyChallengeSubmission(
-                        id: linkedPlayerId,
+                        id: submitterId,
                         uid: uid,
                         linkedPlayerId: lp,
                         displayName: dn,
@@ -267,10 +304,8 @@ final class WeeklyChallengeManager: ObservableObject {
                         return
                     }
 
-                    let uid = data["uid"] as? String ?? ""
-
                     let sub = WeeklyChallengeSubmission(
-                        id: linkedPlayerId,
+                        id: submitterId,
                         uid: uid,
                         linkedPlayerId: lp,
                         displayName: dn,
@@ -292,13 +327,8 @@ final class WeeklyChallengeManager: ObservableObject {
 
     // MARK: - Submitters
 
-    func submitRiddleAnswer(
-        _ text: String,
-        isCorrect: Bool,
-        linkedPlayerId: String,
-        displayName: String
-    ) async throws {
-
+    /// ✅ NEW: no linkedPlayerId/displayName required (admins work too)
+    func submitRiddleAnswer(_ text: String, isCorrect: Bool) async throws {
         guard let challengeId = currentChallenge?.id else {
             throw NSError(domain: "WeeklyChallenge", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "No active challenge."])
@@ -307,17 +337,21 @@ final class WeeklyChallengeManager: ObservableObject {
             throw NSError(domain: "WeeklyChallenge", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "You must be logged in to submit."])
         }
+        guard let submitterId = self.submitterId else {
+            throw NSError(domain: "WeeklyChallenge", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
+        }
 
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
-            throw NSError(domain: "WeeklyChallenge", code: 3,
+            throw NSError(domain: "WeeklyChallenge", code: 4,
                           userInfo: [NSLocalizedDescriptionKey: "Answer cannot be empty."])
         }
 
         let payload: [String: Any] = [
             "uid": uid,
-            "linked_player_id": linkedPlayerId,
-            "display_name": displayName,
+            "linked_player_id": self.linkedPlayerId as Any,
+            "display_name": self.submitterDisplayName ?? self.displayName ?? "Unknown",
             "answerText": cleaned,
             "isCorrect": isCorrect,
             "submittedAt": Timestamp(date: Date())
@@ -326,14 +360,14 @@ final class WeeklyChallengeManager: ObservableObject {
         try await db.collection("weekly_challenges")
             .document(challengeId)
             .collection("submissions")
-            .document(linkedPlayerId)
+            .document(submitterId)
             .setData(payload, merge: true)
 
         self.lastSubmission = WeeklyChallengeSubmission(
-            id: linkedPlayerId,
+            id: submitterId,
             uid: uid,
-            linkedPlayerId: linkedPlayerId,
-            displayName: displayName,
+            linkedPlayerId: self.linkedPlayerId,
+            displayName: self.submitterDisplayName ?? self.displayName,
             answerText: cleaned,
             isCorrect: isCorrect,
             answers: nil,
@@ -343,14 +377,8 @@ final class WeeklyChallengeManager: ObservableObject {
         )
     }
 
-    func submitQuiz(
-        linkedPlayerId: String,
-        displayName: String,
-        answers: [String: Int],
-        score: Int,
-        maxScore: Int
-    ) async throws {
-
+    /// ✅ NEW: no linkedPlayerId/displayName required (admins work too)
+    func submitQuiz(answers: [String: Int], score: Int, maxScore: Int) async throws {
         guard let challengeId = currentChallenge?.id else {
             throw NSError(domain: "WeeklyChallenge", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "No active challenge."])
@@ -359,14 +387,15 @@ final class WeeklyChallengeManager: ObservableObject {
             throw NSError(domain: "WeeklyChallenge", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "You must be logged in to submit."])
         }
-
-        let lp = linkedPlayerId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let dn = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let submitterId = self.submitterId else {
+            throw NSError(domain: "WeeklyChallenge", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
+        }
 
         let payload: [String: Any] = [
             "uid": uid,
-            "linked_player_id": lp,
-            "display_name": dn,
+            "linked_player_id": self.linkedPlayerId as Any,
+            "display_name": self.submitterDisplayName ?? self.displayName ?? "Unknown",
             "answers": answers,
             "score": score,
             "maxScore": maxScore,
@@ -376,14 +405,14 @@ final class WeeklyChallengeManager: ObservableObject {
         try await db.collection("weekly_challenges")
             .document(challengeId)
             .collection("submissions")
-            .document(lp)
+            .document(submitterId)
             .setData(payload, merge: true)
 
         self.lastSubmission = WeeklyChallengeSubmission(
-            id: lp,
+            id: submitterId,
             uid: uid,
-            linkedPlayerId: lp,
-            displayName: dn,
+            linkedPlayerId: self.linkedPlayerId,
+            displayName: self.submitterDisplayName ?? self.displayName,
             answerText: nil,
             isCorrect: nil,
             answers: answers,

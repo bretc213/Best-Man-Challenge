@@ -10,6 +10,9 @@
 import SwiftUI
 
 struct ChallengeContentView: View {
+    
+    @EnvironmentObject var challengeManager: WeeklyChallengeManager
+
     let challenge: WeeklyChallenge
     let lastSubmission: WeeklyChallengeSubmission?
 
@@ -34,9 +37,16 @@ struct ChallengeContentView: View {
             case .quiz:
                 WeeklyQuizChallengeView(
                     challenge: challenge,
-                    lastSubmission: lastSubmission,
-                    onSubmit: onSubmitQuiz
+                    lastSubmission: challengeManager.lastSubmission,
+                    onSubmit: { answers, score, maxScore in
+                        try await challengeManager.submitQuiz(
+                            answers: answers,
+                            score: score,
+                            maxScore: maxScore
+                        )
+                    }
                 )
+
 
             case .riddle:
                 RiddleChallengeView(

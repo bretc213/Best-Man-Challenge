@@ -20,6 +20,8 @@ struct WeeklyChallengesHubView: View {
                     NavigationLink {
                         WeeklyChallengesRootView()
                             .environmentObject(session)
+                            .environmentObject(WeeklyChallengeManager())
+
                     } label: {
                         hubRow(
                             title: "Weekly Challenge",

@@ -1,156 +1,95 @@
-//
-//  WeeklyQuizPlayView.swift
-//  Best Man Challenge
-//
-
 import SwiftUI
 
 struct WeeklyQuizPlayView: View {
     let challenge: WeeklyChallenge
     @ObservedObject var manager: WeeklyChallengeManager
 
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var selections: [String: Int] = [:]
-    @State private var isSubmitting = false
-    @State private var errorText: String?
-
-    // ✅ Lock after endDate
-    private var isLocked: Bool {
-        Date() >= challenge.endDate
-    }
+    @EnvironmentObject var session: SessionStore
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(challenge.title)
+                .font(.title2.bold())
 
-                Text(challenge.title)
-                    .font(.title2)
-                    .bold()
-
-                if isLocked {
-                    Text("🔒 This quiz is locked.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else if isPendingScoring {
-                    Text("✅ Your picks will be scored after the games finish.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let questions = challenge.quiz?.questions, !questions.isEmpty {
-                    ForEach(questions, id: \.id) { q in
-                        questionCard(q)
-                    }
-
-                    Button {
-                        Task { await submit() }
-                    } label: {
-                        Text(isSubmitting ? "Submitting…" : (isLocked ? "Locked" : "Submit Quiz"))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isSubmitting || isLocked)
-
-                } else {
-                    Text("No quiz questions found for this challenge.")
-                        .foregroundStyle(.secondary)
-                }
-
-                if let errorText {
-                    Text(errorText)
-                        .foregroundStyle(.red)
-                        .font(.subheadline)
-                }
+            if let description = challenge.description.isEmpty ? nil : challenge.description {
+                Text(description)
+                    .foregroundStyle(.secondary)
             }
-            .padding()
+
+            Divider().opacity(0.3)
+
+            // ✅ Main quiz UI
+            if let quiz = challenge.quiz,
+               let questions = quiz.questions,
+               !questions.isEmpty {
+
+                WeeklyQuizChallengeView(
+                    challenge: challenge,
+                    lastSubmission: manager.lastSubmission,
+                    onSubmit: { answers, score, maxScore in
+                        // ✅ Only enforce linked player for *players*.
+                        // Refs/admins are allowed even with no linked_player_id.
+                        if !canSubmit {
+                            throw NSError(
+                                domain: "WeeklyChallenge",
+                                code: 99,
+                                userInfo: [NSLocalizedDescriptionKey: "You are not linked to a player yet."]
+                            )
+                        }
+
+                        try await manager.submitQuiz(
+                            answers: answers,
+                            score: score,
+                            maxScore: maxScore
+                        )
+                    }
+                )
+            } else {
+                Text("Quiz not configured.")
+                    .foregroundStyle(.secondary)
+            }
+
+            // ✅ Only show this warning for people who actually need a linked player
+            if showsLinkWarning {
+                Text("You are not linked to a player yet.")
+                    .foregroundColor(.red)
+                    .font(.footnote)
+                    .padding(.top, 4)
+            }
+
+            Spacer()
         }
-        .navigationTitle("Quiz")
+        .padding()
+        .navigationTitle("Weekly Quiz")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var isPendingScoring: Bool {
-        guard let questions = challenge.quiz?.questions, !questions.isEmpty else { return false }
-        return questions.contains(where: { $0.correct_index == nil })
+    // MARK: - Submit rules
+
+    private var role: String {
+        (session.profile?.role ?? "").lowercased()
     }
 
-    private func questionCard(_ q: WeeklyQuizQuestion) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(q.prompt)
-                .font(.headline)
-
-            ForEach(Array(q.options.enumerated()), id: \.offset) { idx, opt in
-                Button {
-                    // ✅ Don’t allow changes after lock
-                    guard !isLocked else { return }
-                    selections[q.id] = idx
-                } label: {
-                    HStack {
-                        Image(systemName: selections[q.id] == idx ? "largecircle.fill.circle" : "circle")
-                        Text(opt)
-                        Spacer()
-                    }
-                    .opacity(isLocked ? 0.65 : 1.0)
-                }
-                .buttonStyle(.plain)
-                .padding(.vertical, 4)
-                .disabled(isLocked)
-            }
-        }
-        .padding()
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+    private var hasLinkedPlayer: Bool {
+        let lp = session.profile?.linkedPlayerId ?? ""
+        return !lp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func submit() async {
-        // ✅ Hard enforcement lock (important)
-        if isLocked {
-            errorText = "This quiz is locked."
-            return
-        }
+    /// Refs/admin-type roles can submit even without a linked player.
+    private var isRefOrAdmin: Bool {
+        role == "ref" || role == "admin" || role == "commish" || role == "commissioner"
+    }
 
-        guard let lp = manager.linkedPlayerId, let dn = manager.displayName else {
-            errorText = "You are not linked to a player yet."
-            return
+    /// Final gate for whether the submit *should* be allowed.
+    private var canSubmit: Bool {
+        if isRefOrAdmin {
+            return true      // ✅ Amanda / commish path
         }
-        guard let questions = challenge.quiz?.questions, !questions.isEmpty else {
-            errorText = "No questions available."
-            return
-        }
+        return hasLinkedPlayer // normal players
+    }
 
-        // ✅ Require all questions answered
-        for q in questions {
-            if selections[q.id] == nil {
-                errorText = "Please answer all questions before submitting."
-                return
-            }
-        }
-
-        var score = 0
-        let maxScore = questions.count
-
-        if !isPendingScoring {
-            for q in questions {
-                if let correct = q.correct_index, selections[q.id] == correct {
-                    score += 1
-                }
-            }
-        }
-
-        isSubmitting = true
-        defer { isSubmitting = false }
-
-        do {
-            try await manager.submitQuiz(
-                linkedPlayerId: lp,
-                displayName: dn,
-                answers: selections,
-                score: score,
-                maxScore: maxScore
-            )
-            dismiss()
-        } catch {
-            errorText = error.localizedDescription
-        }
+    /// Show the red warning only for players who actually need linking.
+    private var showsLinkWarning: Bool {
+        !canSubmit && !isRefOrAdmin
     }
 }

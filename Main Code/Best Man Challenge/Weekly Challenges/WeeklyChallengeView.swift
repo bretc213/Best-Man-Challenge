@@ -1,7 +1,9 @@
 import SwiftUI
+import FirebaseAuth
 
 struct WeeklyChallengeView: View {
     @EnvironmentObject var challengeManager: WeeklyChallengeManager
+    @EnvironmentObject var session: SessionStore
 
     @State private var showQuiz = false
 
@@ -17,9 +19,17 @@ struct WeeklyChallengeView: View {
             ? "Start Quiz"
             : "View / Edit Picks"
     }
-    
+
     var body: some View {
         content
+            .onAppear {
+                // ✅ Critical for admins: provides uid so manager can use admin_<uid> fallback
+                challengeManager.setUserContext(
+                    uid: Auth.auth().currentUser?.uid,
+                    linkedPlayerId: session.profile?.linkedPlayerId,
+                    displayName: session.profile?.displayName
+                )
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -97,7 +107,6 @@ struct WeeklyChallengeView: View {
                     .buttonStyle(.borderedProminent)
                 }
 
-
                 if let last = challengeManager.lastSubmission {
                     lastSubmissionCard(last, challenge: challenge)
                 } else {
@@ -129,7 +138,6 @@ struct WeeklyChallengeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    // ✅ Updated: shows their answers for the week (when available)
     private func lastSubmissionCard(_ submission: WeeklyChallengeSubmission, challenge: WeeklyChallenge) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Your submission")
@@ -138,7 +146,6 @@ struct WeeklyChallengeView: View {
             Text("Submitted \(submission.submittedAt.formatted(date: .abbreviated, time: .shortened))")
                 .foregroundStyle(.secondary)
 
-            // Score (if known)
             if let score = submission.score {
                 if let max = submission.maxScore {
                     Text("Score: \(score)/\(max)")
@@ -147,14 +154,12 @@ struct WeeklyChallengeView: View {
                 }
             }
 
-            // If any quiz question is missing correct_index, this week is "pending scoring"
             if isPendingScoring(challenge) {
                 Text("Scoring will be applied after the games finish.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
-            // Show quiz answers (if they exist)
             if let answers = submission.answers,
                let questions = challenge.quiz?.questions,
                !questions.isEmpty {
@@ -198,7 +203,6 @@ struct WeeklyChallengeView: View {
 
     private func isPendingScoring(_ challenge: WeeklyChallenge) -> Bool {
         guard let qs = challenge.quiz?.questions, !qs.isEmpty else { return false }
-        // requires WeeklyQuizQuestion.correct_index to be Int?
         return qs.contains(where: { $0.correct_index == nil })
     }
 
@@ -206,7 +210,7 @@ struct WeeklyChallengeView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Your submission")
                 .font(.headline)
-            Text("No submission yet (or you’re not linked to a player).")
+            Text("No submission yet.")
                 .foregroundStyle(.secondary)
         }
         .padding()
