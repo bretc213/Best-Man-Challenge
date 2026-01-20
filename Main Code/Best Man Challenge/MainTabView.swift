@@ -36,7 +36,7 @@ struct MainTabView: View {
             }
 
             NavigationView {
-                EventsView()
+                EventsRootView()
             }
             .tabItem {
                 VStack {

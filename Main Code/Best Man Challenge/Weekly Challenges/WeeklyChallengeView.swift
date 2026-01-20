@@ -17,7 +17,7 @@ struct WeeklyChallengeView: View {
         }
         return challengeManager.lastSubmission == nil
             ? "Start Quiz"
-            : "View / Edit Picks"
+            : "Quiz Completed"
     }
 
     var body: some View {

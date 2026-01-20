@@ -10,11 +10,27 @@ import SwiftUI
 struct WeeklyQuizChallengeView: View {
     let challenge: WeeklyChallenge
     let lastSubmission: WeeklyChallengeSubmission?
+    let isLocked: Bool
     let onSubmit: (_ answers: [String: Int], _ score: Int, _ maxScore: Int) async throws -> Void
+
+    // ✅ THIS IS THE FIX
+    // Default value makes old call sites compile
+    init(
+        challenge: WeeklyChallenge,
+        lastSubmission: WeeklyChallengeSubmission?,
+        isLocked: Bool = false,
+        onSubmit: @escaping (_ answers: [String: Int], _ score: Int, _ maxScore: Int) async throws -> Void
+    ) {
+        self.challenge = challenge
+        self.lastSubmission = lastSubmission
+        self.isLocked = isLocked
+        self.onSubmit = onSubmit
+    }
 
     @State private var selected: [String: Int] = [:]
     @State private var error: String?
     @State private var isSubmitting = false
+    @State private var didAutoSubmit = false
 
     var body: some View {
         if let score = lastSubmission?.score,
@@ -35,8 +51,15 @@ struct WeeklyQuizChallengeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
 
+                    if isLocked {
+                        Text("Time expired — answers are locked.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
                     ForEach(questions) { q in
                         quizQuestionCard(q)
+                            .opacity(isLocked ? 0.7 : 1)
                     }
 
                     if let error {
@@ -46,26 +69,25 @@ struct WeeklyQuizChallengeView: View {
                     }
 
                     Button {
-                        Task { await submitQuiz(questions: questions) }
+                        Task { await submitQuiz(questions: questions, isAuto: false) }
                     } label: {
                         Text(isSubmitting ? "Submitting..." : "Submit Quiz")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isSubmitting || selected.count < questions.count)
-                    .padding(.top, 8)
+                    .disabled(isSubmitting || isLocked || selected.count < questions.count)
                 }
-                .padding(.top, 10)
-                .padding(.horizontal)
+                .padding()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .weeklyQuizTimeExpired)) { _ in
+                guard !didAutoSubmit else { return }
+                didAutoSubmit = true
+                Task { await submitQuiz(questions: questions, isAuto: true) }
             }
 
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Quiz not configured.")
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal)
+            Text("Quiz not configured.")
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -83,7 +105,12 @@ struct WeeklyQuizChallengeView: View {
                         .foregroundStyle(isPicked ? .green : .secondary)
                 }
                 .contentShape(Rectangle())
-                .onTapGesture { selected[q.id] = idx }
+                .onTapGesture {
+                    guard !isLocked else { return }
+                    guard lastSubmission == nil else { return }
+                    guard !isSubmitting else { return }
+                    selected[q.id] = idx
+                }
             }
         }
         .padding(12)
@@ -91,8 +118,14 @@ struct WeeklyQuizChallengeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
-    private func submitQuiz(questions: [WeeklyQuizQuestion]) async {
-        error = nil
+    private func submitQuiz(questions: [WeeklyQuizQuestion], isAuto: Bool) async {
+        guard lastSubmission == nil else { return }
+        guard !isSubmitting else { return }
+
+        if !isAuto && selected.count < questions.count {
+            return
+        }
+
         isSubmitting = true
         defer { isSubmitting = false }
 
@@ -100,7 +133,6 @@ struct WeeklyQuizChallengeView: View {
         var score = 0
 
         for q in questions {
-            // ✅ correct_index can be nil (especially if admin hasn't populated it yet)
             guard let correct = q.correct_index else { continue }
             if selected[q.id] == correct {
                 score += pointsPerCorrect

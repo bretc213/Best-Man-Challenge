@@ -17,7 +17,7 @@ struct CFBBracketView: View {
     private let entries: [CFBEntry] = [
         .init(playerId: "valentinom", displayName: "Valentino", points: 14,
               picks: ["Miami","Georgia","Indiana","Oregon","Indiana","Miami","Miami"]),
-        .init(playerId: "dannyo", displayName: "Danny O", points: 8,
+        .init(playerId: "dannyo", displayName: "Danny O", points: 16,
               picks: ["Ohio State","Georgia","Indiana","Oregon","Indiana","Georgia","Indiana"]),
         .init(playerId: "isaiahs", displayName: "Isaiah", points: 6,
               picks: ["Ohio State","Ole Miss","Indiana","Oregon","Indiana","Ohio State","Ohio State"]),

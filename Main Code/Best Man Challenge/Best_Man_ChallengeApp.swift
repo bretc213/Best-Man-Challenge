@@ -49,9 +49,20 @@ struct BestManChallengeApp: App {
                 session.start()
             }
             // ✅ DEV ONLY: runs once due to the UserDefaults + Firestore existence guards
-            .task {
-                await WeeklyChallengeSeeder2026W02.seedIfNeeded()
-            }
+            /*.task {
+                Task {
+                    do {
+                        try await InPersonEventsSeeder.seed()
+                        print("✅ Events seeded")
+                    } catch {
+                        print("❌ Events seed failed:", error)
+                    }
+                }
+            }*/
+            
+            
+
+            
         }
     }
 }
