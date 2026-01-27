@@ -11,12 +11,13 @@ import Foundation
 struct LeaderboardPlayer: Identifiable, Hashable {
     let id: String
     let name: String
-    let totalPoints: Int
+    let totalPoints: Double
 
     init?(id: String, data: [String: Any]) {
         guard let name = data["display_name"] as? String else { return nil }
         self.id = id
         self.name = name
-        self.totalPoints = (data["total_points"] as? NSNumber)?.intValue ?? 0
+        self.totalPoints = (data["total_points"] as? NSNumber)?.doubleValue ?? 0.0
     }
 }
+

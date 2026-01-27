@@ -3,8 +3,8 @@
 //  Best Man Challenge
 //
 //  Created by Bret Clemetson on 1/12/26.
+//  (Futures row + store — file kept separate from scores store.)
 //
-
 
 import Foundation
 import FirebaseFirestore

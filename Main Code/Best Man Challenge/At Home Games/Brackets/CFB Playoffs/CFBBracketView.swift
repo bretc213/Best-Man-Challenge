@@ -1,3 +1,11 @@
+//
+//  CFBBracketView.swift
+//  Best Man Challenge
+//
+//  Created by Bret Clemetson.
+//  Updated to include Admin Finalize action for scoring engine.
+//
+
 import SwiftUI
 
 struct CFBBracketView: View {
@@ -12,8 +20,8 @@ struct CFBBracketView: View {
 
     @State private var tab: Tab = .standings
 
-    // MARK: - Hardcoded Data (v1)
-
+    // MARK: - Hardcoded Data (v1) — points are treated as raw challenge scores (Double)
+    // These are the per-player scores that will be ranked by the finalizer.
     private let entries: [CFBEntry] = [
         .init(playerId: "valentinom", displayName: "Valentino", points: 14,
               picks: ["Miami","Georgia","Indiana","Oregon","Indiana","Miami","Miami"]),
@@ -48,10 +56,42 @@ struct CFBBracketView: View {
         }
     }
 
+    // MARK: - Admin finalize UI state
+    @State private var isRunningFinalize = false
+    @State private var finalizeMessage: String? = nil
+    @State private var showConfirmFinalize = false
+
     var body: some View {
         ThemedScreen {
             VStack(spacing: 12) {
                 header()
+
+                // Admin finalize controls: visible only if session.profile?.role == "owner"
+                if isOwnerAccount() {
+                    HStack {
+                        Button {
+                            showConfirmFinalize = true
+                        } label: {
+                            Label("Finalize & Award Points", systemImage: "checkmark.seal.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isRunningFinalize)
+
+                        Spacer()
+
+                        if isRunningFinalize {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .confirmationDialog("Are you sure you want to finalize the CFB Playoffs and award points? This action is idempotent but intended to be run once.", isPresented: $showConfirmFinalize) {
+                        Button("Finalize (run)", role: .destructive) {
+                            Task { await runFinalize() }
+                        }
+                        Button("Cancel", role: .cancel) { }
+                    }
+                }
 
                 Picker("Tab", selection: $tab) {
                     ForEach(Tab.allCases) { t in
@@ -72,6 +112,8 @@ struct CFBBracketView: View {
             }
             .navigationTitle("CFB Bracket")
             .navigationBarTitleDisplayMode(.inline)
+            .padding(.bottom, 8)
+            .overlay(finalizeStatusOverlay(), alignment: .bottom)
         }
     }
 
@@ -81,7 +123,6 @@ struct CFBBracketView: View {
         VStack(spacing: 6) {
             Text("College Football Playoff Pool")
                 .font(.title3).bold()
-
         }
         .padding(.top, 10)
         .padding(.horizontal)
@@ -134,7 +175,7 @@ struct CFBBracketView: View {
                 }
             }
 
-            Text("\(entry.points)")
+            Text("\(Int(entry.points))")
                 .frame(width: 50, alignment: .trailing)
                 .fontWeight(isMe ? .bold : .regular)
         }
@@ -175,7 +216,7 @@ struct CFBBracketView: View {
 
                 Spacer()
 
-                Text("\(entry.points) pts")
+                Text("\(Int(entry.points)) pts")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -207,9 +248,72 @@ struct CFBBracketView: View {
         guard let linked = session.profile?.linkedPlayerId else { return false }
         return linked == playerId
     }
+
+    private func isOwnerAccount() -> Bool {
+        // session.profile?.role should exist based on your accounts model.
+        // owner is the role that can finalize.
+        return (session.profile?.role ?? "") == "owner"
+    }
+
+    // MARK: - Finalizer runner
+
+    private func runFinalizeStatusMessage(_ msg: String, error: Bool = false) {
+        finalizeMessage = msg
+        // auto-clear after 6 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            if finalizeMessage == msg { finalizeMessage = nil }
+        }
+    }
+
+    private func finalizeStatusOverlay() -> some View {
+        Group {
+            if let msg = finalizeMessage {
+                Text(msg)
+                    .font(.caption)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.12)))
+                    .padding(.bottom, 12)
+            } else {
+                EmptyView()
+            }
+        }
+    }
+
+    private func runFinalize() async {
+        isRunningFinalize = true
+        runFinalizeStatusMessage("Finalizing…")
+
+        // Build scores dictionary from the hardcoded entries
+        var scoresByPlayer: [String: Double] = [:]
+        for e in entries {
+            scoresByPlayer[e.playerId] = e.points
+        }
+
+        // Choose a challengeId (unique). You can change this later.
+        let challengeId = "cfb_playoffs_2025"
+        let multiplier: Double = 1.0
+        let higherIsBetter = true
+
+        let finalizer = ChallengePointsFinalizer()
+
+        do {
+            try await finalizer.finalizeChallenge(
+                challengeId: challengeId,
+                scoresByPlayer: scoresByPlayer,
+                multiplier: multiplier,
+                higherIsBetter: higherIsBetter
+            )
+
+            runFinalizeStatusMessage("Finalize complete — check point_awards & players.total_points.")
+        } catch {
+            runFinalizeStatusMessage("Finalize failed: \(error.localizedDescription)")
+        }
+
+        isRunningFinalize = false
+    }
 }
 
-// MARK: - Zoomable Image
+// MARK: - Zoomable Image (unchanged)
 
 struct ZoomableImage: View {
     let assetName: String
@@ -222,8 +326,8 @@ struct ZoomableImage: View {
             ScrollView([.vertical, .horizontal], showsIndicators: false) {
                 Image(assetName)
                     .resizable()
-                    .aspectRatio(contentMode: .fit) // ✅ fits by default
-                    .frame(width: geo.size.width)    // ✅ fit-to-screen width
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: geo.size.width)
                     .scaleEffect(scale)
                     .gesture(
                         MagnificationGesture()
@@ -241,12 +345,18 @@ struct ZoomableImage: View {
     }
 }
 
-
 // MARK: - Model
 
 struct CFBEntry {
     let playerId: String
     let displayName: String
-    let points: Int
+    let points: Double
     let picks: [String]
+}
+
+// MARK: - Preview
+
+#Preview {
+    CFBBracketView()
+        .environmentObject(SessionStore())
 }

@@ -3,6 +3,8 @@
 //  Best Man Challenge
 //
 //  Created by Bret Clemetson on 7/31/25.
+//  Updated to support Double points, formatted display,
+//  and sheet(item:) to avoid first-tap "No player selected".
 //
 
 import SwiftUI
@@ -25,7 +27,10 @@ struct LeaderboardView: View {
 
     private let excludedGroomsmenIds: Set<String> = ["anthonyc", "dannyo", "jakeo"]
     private let wildcardCutoffRank: Int = 5
-    private let excludedOverallLeaderboardIds: Set<String> = ["bretc"] // ✅ Owner excluded from overall leaderboard
+    private let excludedOverallLeaderboardIds: Set<String> = ["bretc"] // Owner excluded from overall leaderboard
+
+    // MARK: - Ledger sheet selection (fixes first-tap bug)
+    @State private var selectedLedgerPlayer: LeaderboardPlayer? = nil
 
     // MARK: - Ranked Players
 
@@ -40,7 +45,7 @@ struct LeaderboardView: View {
             }
         }()
 
-        // ✅ Always remove Bret from the overall leaderboard (both modes)
+        // Always remove Bret from the overall leaderboard (both modes)
         let basePlayers = basePlayersByMode.filter { !excludedOverallLeaderboardIds.contains($0.id) }
 
         // Sort by points desc; tie-break by name
@@ -54,13 +59,15 @@ struct LeaderboardView: View {
         switch mode {
         case .bestMan:
             // Back relative to 1st place
-            let topScore = sorted.first?.totalPoints ?? 0
+            let topScore = sorted.first?.totalPoints ?? 0.0
             return sorted.enumerated().map { index, player in
-                (
-                    player: player,
-                    rank: index + 1,
-                    pointsBack: index == 0 ? nil : "\(topScore - player.totalPoints)"
-                )
+                let back: String? = {
+                    guard index != 0 else { return nil }
+                    let diff = topScore - player.totalPoints
+                    return formatPoints(diff)
+                }()
+
+                return (player: player, rank: index + 1, pointsBack: back)
             }
 
         case .groomsmen:
@@ -81,9 +88,9 @@ struct LeaderboardView: View {
                 if index == cutoffIndex {
                     backText = nil
                 } else if delta > 0 {
-                    backText = "+\(delta)"
+                    backText = "+\(formatPoints(delta))"
                 } else {
-                    backText = "\(abs(delta))"
+                    backText = formatPoints(abs(delta))
                 }
 
                 return (player: player, rank: index + 1, pointsBack: backText)
@@ -117,13 +124,18 @@ struct LeaderboardView: View {
                         ForEach(rankedPlayers, id: \.player.id) { entry in
                             let isMe = isLoggedInPlayer(entry.player)
 
-                            leaderboardRow(
-                                rank: entry.rank,
-                                name: entry.player.name,
-                                points: entry.player.totalPoints,
-                                pointsBackText: entry.pointsBack,
-                                isMe: isMe
-                            )
+                            Button {
+                                selectedLedgerPlayer = entry.player
+                            } label: {
+                                leaderboardRow(
+                                    rank: entry.rank,
+                                    name: entry.player.name,
+                                    points: entry.player.totalPoints,
+                                    pointsBackText: entry.pointsBack,
+                                    isMe: isMe
+                                )
+                            }
+                            .buttonStyle(.plain)
                             .listRowBackground(Color.clear)
 
                             // 🔴 Red cutoff line under 5th place (Groomsmen only)
@@ -142,6 +154,10 @@ struct LeaderboardView: View {
             }
         }
         .onAppear { store.startListening() }
+        .sheet(item: $selectedLedgerPlayer) { player in
+            PlayerLedgerView(playerId: player.id, playerName: player.name)
+                .environmentObject(session)
+        }
     }
 
     // MARK: - Helpers
@@ -149,6 +165,14 @@ struct LeaderboardView: View {
     private func isLoggedInPlayer(_ player: LeaderboardPlayer) -> Bool {
         guard let linked = session.profile?.linkedPlayerId else { return false }
         return player.id == linked
+    }
+
+    private func formatPoints(_ pts: Double) -> String {
+        if pts == floor(pts) {
+            return String(Int(pts))
+        } else {
+            return String(format: "%.3f", pts).replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
+        }
     }
 
     // MARK: - Header
@@ -166,13 +190,13 @@ struct LeaderboardView: View {
         .secondaryText()
     }
 
-    // MARK: - Row
+    // MARK: - Row (your old card look)
 
     @ViewBuilder
     func leaderboardRow(
         rank: Int,
         name: String,
-        points: Int,
+        points: Double,
         pointsBackText: String?,
         isMe: Bool
     ) -> some View {
@@ -196,7 +220,7 @@ struct LeaderboardView: View {
                 }
             }
 
-            Text("\(points)")
+            Text(formatPoints(points))
                 .frame(width: 50, alignment: .trailing)
                 .fontWeight(isMe ? .bold : .regular)
 
