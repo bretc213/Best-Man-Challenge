@@ -12,4 +12,7 @@ enum ChallengeType: String, Codable, CaseIterable {
     case minesweeper
     case creative
     case quiz = "quiz"
+
+    // ✅ NEW
+    case prop_bets = "prop_bets"
 }

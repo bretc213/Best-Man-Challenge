@@ -13,6 +13,9 @@ import FirebaseFirestore
 struct BestManChallengeApp: App {
     @StateObject private var session = SessionStore()
 
+    // ✅ Prevents `.task` from running bootstrap more than once per app launch
+    @State private var didBootstrapThisLaunch = false
+
     init() {
         FirebaseApp.configure()
 
@@ -45,6 +48,9 @@ struct BestManChallengeApp: App {
             .environmentObject(session)
             .preferredColorScheme(.dark)
             .task {
+                // ✅ SwiftUI can re-run `.task` on view rebuilds — guard it.
+                guard !didBootstrapThisLaunch else { return }
+                didBootstrapThisLaunch = true
                 await bootstrapApp()
             }
             // session.start() intentionally not called in onAppear: we start it in bootstrapApp()
@@ -69,16 +75,9 @@ struct BestManChallengeApp: App {
         // ✅ Start session after persistence attempt
         session.start()
 
-        // ✅ ONE-TIME: seed Week 4 on app open (guarded by UserDefaults)
-        let seedKey = "did_seed_weekly_2026_w04"
-        if !UserDefaults.standard.bool(forKey: seedKey) {
-            do {
-                try await WeeklyChallengeSeeder2026W04.seedQuiz()
-                UserDefaults.standard.set(true, forKey: seedKey)
-                print("✅ Seeded weekly_challenges/2026_w04")
-            } catch {
-                print("❌ Week 4 seed failed: \(error.localizedDescription)")
-            }
-        }
+        // ✅ Seed Week 5 on app open
+        // IMPORTANT: Prefer calling a seeder that ALSO guards by checking Firestore doc exists,
+        // so it’s safe across reinstalls & multiple devices.
+        await WeeklyChallengeSeeder2026W05.seedIfNeeded()
     }
 }

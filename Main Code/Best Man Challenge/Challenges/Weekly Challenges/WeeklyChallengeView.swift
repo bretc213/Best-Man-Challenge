@@ -6,24 +6,29 @@ struct WeeklyChallengeView: View {
     @EnvironmentObject var session: SessionStore
 
     @State private var showQuiz = false
+    @State private var showPropBets = false
 
-    private func isLocked(_ challenge: WeeklyChallenge) -> Bool {
-        Date() >= challenge.endDate
+    private func deadlineDate(for challenge: WeeklyChallenge) -> Date? {
+        challenge.locksAt ?? challenge.endDate
     }
 
-    private func buttonTitle(for challenge: WeeklyChallenge) -> String {
-        if isLocked(challenge) {
-            return "View Picks (Locked)"
-        }
-        return challengeManager.lastSubmission == nil
-            ? "Start Quiz"
-            : "Quiz Completed"
+    private func isLocked(_ challenge: WeeklyChallenge) -> Bool {
+        guard let deadline = deadlineDate(for: challenge) else { return false }
+        return Date() >= deadline
+    }
+
+    private func quizButtonTitle(for challenge: WeeklyChallenge) -> String {
+        if isLocked(challenge) { return "View Quiz (Locked)" }
+        return challengeManager.lastSubmission == nil ? "Start Quiz" : "Quiz Completed"
+    }
+
+    private func propBetsButtonTitle(for challenge: WeeklyChallenge) -> String {
+        isLocked(challenge) ? "View Picks (Locked)" : "Make Picks"
     }
 
     var body: some View {
         content
             .onAppear {
-                // ✅ Critical for admins: provides uid so manager can use admin_<uid> fallback
                 challengeManager.setUserContext(
                     uid: Auth.auth().currentUser?.uid,
                     linkedPlayerId: session.profile?.linkedPlayerId,
@@ -32,9 +37,7 @@ struct WeeklyChallengeView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        challengeManager.refresh()
-                    } label: {
+                    Button { challengeManager.refresh() } label: {
                         Image(systemName: "arrow.clockwise")
                     }
                     .accessibilityLabel("Refresh")
@@ -44,8 +47,14 @@ struct WeeklyChallengeView: View {
                 if let challenge = challengeManager.currentChallenge {
                     WeeklyQuizPlayView(challenge: challenge, manager: challengeManager)
                 } else {
-                    Text("No active challenge.")
-                        .navigationTitle("Quiz")
+                    Text("No active challenge.").navigationTitle("Quiz")
+                }
+            }
+            .navigationDestination(isPresented: $showPropBets) {
+                if let challenge = challengeManager.currentChallenge {
+                    PropBetsView(challengeId: challenge.id)
+                } else {
+                    Text("No active challenge.").navigationTitle("Prop Bets")
                 }
             }
     }
@@ -97,20 +106,45 @@ struct WeeklyChallengeView: View {
             VStack(alignment: .leading, spacing: 16) {
                 headerCard(challenge)
 
+                // ✅ Quiz CTA + timer copy ONLY for quiz
                 if challenge.type == .quiz {
-                    Button {
-                        showQuiz = true
-                    } label: {
-                        Text(buttonTitle(for: challenge))
+                    Button { showQuiz = true } label: {
+                        Text(quizButtonTitle(for: challenge))
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+
+                    Text("You’ll have 5 minutes once you start.")
+                        .foregroundStyle(.secondary)
+                        .font(.footnote)
                 }
 
-                if let last = challengeManager.lastSubmission {
-                    lastSubmissionCard(last, challenge: challenge)
+                // ✅ Prop Bets CTA (no timer)
+                if challenge.type == .prop_bets {
+                    Button { showPropBets = true } label: {
+                        Text(propBetsButtonTitle(for: challenge))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Text(isLocked(challenge) ? "Picks are locked." : "You can change picks any time before kickoff.")
+                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                }
+
+                // ✅ Submission section: quiz/riddle vs prop bets
+                if challenge.type == .prop_bets {
+                    if let summary = challengeManager.propBetsPickSummary, summary.hasSubmitted {
+                        propBetsSubmissionCard(summary, challenge: challenge)
+                    } else {
+                        noSubmissionCard
+                    }
                 } else {
-                    noSubmissionCard
+                    if let last = challengeManager.lastSubmission {
+                        lastSubmissionCard(last, challenge: challenge)
+                    } else {
+                        noSubmissionCard
+                    }
                 }
             }
             .padding()
@@ -124,13 +158,21 @@ struct WeeklyChallengeView: View {
                 .bold()
 
             if !challenge.description.isEmpty {
-                Text(challenge.description)
-                    .foregroundStyle(.secondary)
+                Text(challenge.description).foregroundStyle(.secondary)
             }
 
             HStack(spacing: 12) {
-                pill("Starts", challenge.startDate.formatted(date: .abbreviated, time: .omitted))
-                pill("Ends", challenge.endDate.formatted(date: .abbreviated, time: .omitted))
+                if let start = challenge.startDate {
+                    pill("Starts", start.formatted(date: .abbreviated, time: .omitted))
+                }
+
+                if let end = challenge.endDate {
+                    pill("Ends", end.formatted(date: .abbreviated, time: .omitted))
+                } else if let locks = challenge.locksAt {
+                    pill("Locks", locks.formatted(date: .abbreviated, time: .omitted))
+                } else {
+                    pill("Ends", "—")
+                }
             }
         }
         .padding()
@@ -140,84 +182,16 @@ struct WeeklyChallengeView: View {
 
     private func lastSubmissionCard(_ submission: WeeklyChallengeSubmission, challenge: WeeklyChallenge) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Your submission")
-                .font(.headline)
-
+            Text("Your submission").font(.headline)
             Text("Submitted \(submission.submittedAt.formatted(date: .abbreviated, time: .shortened))")
                 .foregroundStyle(.secondary)
 
-            // ✅ Score display that respects pending scoring (correct_index == nil)
-            if let answers = submission.answers,
-               let questions = challenge.quiz?.questions,
-               !questions.isEmpty {
-
-                let pointsPerCorrect = challenge.quiz?.points_per_correct ?? 1
-                let scorableQuestions = questions.filter { $0.correct_index != nil }
-                let scorableMax = scorableQuestions.count * pointsPerCorrect
-
-                let scorableScore: Int = scorableQuestions.reduce(0) { partial, q in
-                    guard let correct = q.correct_index else { return partial }
-                    let picked = answers[q.id]
-                    return partial + ((picked == correct) ? pointsPerCorrect : 0)
-                }
-
-                if scorableMax > 0 {
-                    Text("Score: \(scorableScore)/\(scorableMax)")
-                } else {
-                    Text("Score: Pending")
-                        .foregroundStyle(.secondary)
-                }
-
-            } else if let score = submission.score {
-                // Fallback for non-quiz submissions or older docs
+            if let score = submission.score {
                 if let max = submission.maxScore {
                     Text("Score: \(score)/\(max)")
                 } else {
                     Text("Score: \(score)")
                 }
-            }
-
-
-            if isPendingScoring(challenge) {
-                Text("Scoring will be applied after the games finish.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let answers = submission.answers,
-               let questions = challenge.quiz?.questions,
-               !questions.isEmpty {
-
-                Divider().opacity(0.35)
-
-                Text("Your picks")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                VStack(spacing: 8) {
-                    ForEach(questions, id: \.id) { q in
-                        let pickedIndex = answers[q.id]
-                        let pickedText: String = {
-                            guard let pickedIndex,
-                                  pickedIndex >= 0,
-                                  pickedIndex < q.options.count else { return "—" }
-                            return q.options[pickedIndex]
-                        }()
-
-                        HStack(alignment: .top, spacing: 10) {
-                            Text(q.prompt)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-
-                            Spacer()
-
-                            Text(pickedText)
-                                .font(.footnote.weight(.semibold))
-                        }
-                    }
-                }
-                .padding(.top, 2)
             }
         }
         .padding()
@@ -225,17 +199,44 @@ struct WeeklyChallengeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func isPendingScoring(_ challenge: WeeklyChallenge) -> Bool {
-        guard let qs = challenge.quiz?.questions, !qs.isEmpty else { return false }
-        return qs.contains(where: { $0.correct_index == nil })
+    private func propBetsSubmissionCard(_ summary: PropBetsPickSummary, challenge: WeeklyChallenge) -> some View {
+        let submittedText: String = {
+            guard let d = summary.submittedAt else { return "Submitted —" }
+            return "Submitted \(d.formatted(date: .abbreviated, time: .shortened))"
+        }()
+
+        let totalProps = max(challengeManager.currentChallenge == nil ? 0 : 0, 0) // placeholder; we don't have props count here
+        // We can’t know total props count from this screen without querying subcollection.
+        // So we show picks count only (still useful).
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Your submission")
+                .font(.headline)
+
+            Text(submittedText)
+                .foregroundStyle(.secondary)
+
+            Text("Picks submitted: \(summary.selections.count)")
+                .foregroundStyle(.primary)
+
+            if isLocked(challenge) {
+                Text("Locked.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("You can still update picks until kickoff.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private var noSubmissionCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Your submission")
-                .font(.headline)
-            Text("No submission yet.")
-                .foregroundStyle(.secondary)
+            Text("Your submission").font(.headline)
+            Text("No submission yet.").foregroundStyle(.secondary)
         }
         .padding()
         .background(.thinMaterial)

@@ -171,7 +171,7 @@ struct LeaderboardView: View {
         if pts == floor(pts) {
             return String(Int(pts))
         } else {
-            return String(format: "%.3f", pts).replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
+            return String(format: "%.1f", pts).replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
         }
     }
 

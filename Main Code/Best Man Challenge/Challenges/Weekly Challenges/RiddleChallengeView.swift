@@ -155,6 +155,7 @@ struct RiddleChallengeView: View {
                 type: ChallengeType(rawValue: "riddle") ?? .riddle, // adjust if your enum differs
                 startDate: Date().addingTimeInterval(-3600),
                 endDate: Date().addingTimeInterval(3600 * 24),
+                locksAt: nil,
                 answer: "test",
                 puzzle: nil,
                 cipher: nil,

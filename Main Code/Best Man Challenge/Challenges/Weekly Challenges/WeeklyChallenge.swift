@@ -23,7 +23,7 @@ struct WeeklyChallengeCipher: Codable {
     let shift: Int?
 }
 
-// MARK: - Quiz models (NEW)
+// MARK: - Quiz models
 
 struct WeeklyQuizQuestion: Codable, Identifiable {
     let id: String
@@ -46,8 +46,13 @@ struct WeeklyChallenge: Identifiable, Codable {
     let title: String
     let description: String
     let type: ChallengeType
-    let startDate: Date
-    let endDate: Date
+
+    // ✅ Optional so prop_bets can exist without “timer dates”
+    let startDate: Date?
+    let endDate: Date?
+
+    // ✅ Prop-bets locking (kickoff)
+    let locksAt: Date?
 
     // Riddle-style challenge
     let answer: String?
@@ -56,19 +61,35 @@ struct WeeklyChallenge: Identifiable, Codable {
     let puzzle: WeeklyChallengePuzzle?
     let cipher: WeeklyChallengeCipher?
 
-    // Quiz challenge (NEW)
+    // Quiz challenge
     let quiz: WeeklyChallengeQuiz?
 
     // Optional Firestore flag
     let is_active: Bool?
 
+    // MARK: - Derived
+
     var isActive: Bool {
         if let is_active { return is_active }
-        let now = Date()
-        return now >= startDate && now < endDate
+
+        if let startDate, let endDate {
+            let now = Date()
+            return now >= startDate && now < endDate
+        }
+
+        // If no start/end, default active
+        return true
     }
 
     var isExpired: Bool {
-        Date() >= endDate
+        if let endDate {
+            return Date() >= endDate
+        }
+        return false
+    }
+
+    var isLocked: Bool {
+        guard let locksAt else { return false }
+        return Date() >= locksAt
     }
 }

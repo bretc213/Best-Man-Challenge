@@ -13,14 +13,12 @@ struct WeeklyChallengesRootView: View {
     @State private var tab: Tab = .thisWeek
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                tabPicker
-                tabContent
-            }
-            .navigationTitle("Weekly Challenge")
-            .navigationBarTitleDisplayMode(.inline)
+        VStack(spacing: 12) {
+            tabPicker
+            tabContent
         }
+        .navigationTitle("Weekly Challenge")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private var tabPicker: some View {

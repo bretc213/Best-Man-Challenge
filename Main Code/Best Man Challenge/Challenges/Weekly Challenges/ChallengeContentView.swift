@@ -3,14 +3,13 @@
 //  Best Man Challenge
 //
 //  Created by Bret Clemetson on 5/26/25.
-//  Updated on 12/25/25
+//  Updated on 2/3/26
 //
-
 
 import SwiftUI
 
 struct ChallengeContentView: View {
-    
+
     @EnvironmentObject var challengeManager: WeeklyChallengeManager
 
     let challenge: WeeklyChallenge
@@ -47,13 +46,16 @@ struct ChallengeContentView: View {
                     }
                 )
 
-
             case .riddle:
                 RiddleChallengeView(
                     challenge: challenge,
                     lastSubmission: lastSubmission,
                     onSubmit: onSubmitRiddle
                 )
+
+            case .prop_bets:
+                // ✅ Prop Bets uses its own view + rules (no timer)
+                PropBetsView(challengeId: challenge.id)
 
             case .minesweeper:
                 Text("Minesweeper mode coming soon.")
@@ -67,5 +69,6 @@ struct ChallengeContentView: View {
             Spacer(minLength: 0)
         }
         .padding(.top, 4)
+        .padding(.horizontal, 16)
     }
 }

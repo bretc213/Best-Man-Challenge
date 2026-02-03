@@ -23,6 +23,11 @@ struct AdminScoringHubView: View {
         var multiplier: Double
         let description: String
         let higherIsBetter: Bool
+
+        /// If true, and finalize succeeds, we will move the corresponding at-home tile to "archived".
+        /// Use this ONLY for "complete" challenges (ex: NFL overall), not partial rounds.
+        let archivesAtHomeOnFinalize: Bool
+
         let scoreProvider: () async throws -> [String: Double]
     }
 
@@ -146,8 +151,10 @@ struct AdminScoringHubView: View {
                                         Button {
                                             Task { await applyWeeklyBonus(weeklyId: w.id) }
                                         } label: {
-                                            Label(w.bonusesApplied ? "Re-Apply Winner Bonus" : "Apply Winner Bonus",
-                                                  systemImage: w.bonusesApplied ? "arrow.clockwise.circle.fill" : "plus.circle.fill")
+                                            Label(
+                                                w.bonusesApplied ? "Re-Apply Winner Bonus" : "Apply Winner Bonus",
+                                                systemImage: w.bonusesApplied ? "arrow.clockwise.circle.fill" : "plus.circle.fill"
+                                            )
                                         }
                                         .buttonStyle(.borderedProminent)
                                         .disabled(!isOwnerAccount() || isRunning || !w.isFinalized)
@@ -196,6 +203,7 @@ struct AdminScoringHubView: View {
                 multiplier: 1,
                 description: "College Football playoff pool (test/hardcoded).",
                 higherIsBetter: true,
+                archivesAtHomeOnFinalize: true, // ✅ complete challenge, archive tile when finalized
                 scoreProvider: {
                     return [
                         "valentinom": 14,
@@ -219,6 +227,7 @@ struct AdminScoringHubView: View {
                 multiplier: 3,
                 description: "Totals across all rounds (computed from Firestore via NFLPlayoffsScoresStore).",
                 higherIsBetter: true,
+                archivesAtHomeOnFinalize: true, // ✅ only archive when OVERALL is finalized
                 scoreProvider: {
                     let store = NFLPlayoffsScoresStore(bracketId: "nfl_2026_playoffs")
                     let provider = NFLPlayoffsScoresProvider(store: store)
@@ -289,6 +298,12 @@ struct AdminScoringHubView: View {
             )
 
             setStatus("Finalize complete for \(row.title).", temporary: true)
+
+            // ✅ Only archive the at-home tile when this finalize represents "complete"
+            if row.archivesAtHomeOnFinalize {
+                await markAtHomeGameArchived(challengeId: row.id)
+            }
+
         } catch {
             setStatus("Finalize failed: \(error.localizedDescription)", temporary: true)
         }
@@ -317,7 +332,6 @@ struct AdminScoringHubView: View {
 
             await reloadWeeklyRows()
 
-            // Optional: log who it applied to (reads from your weeklyRows state)
             if let row = weeklyBonusRows.first(where: { $0.id == weeklyId }) {
                 print("🏁 Applied winners for \(weeklyId):", row.winners)
             }
@@ -329,7 +343,33 @@ struct AdminScoringHubView: View {
         isRunning = false
     }
 
+    // MARK: - At Home archiving (new)
 
+    /// Finds the at-home game doc whose `challengeId` matches and moves it to archived.
+    /// This does nothing if the finalize row is not tied to an at-home tile.
+    private func markAtHomeGameArchived(challengeId: String) async {
+        do {
+            let snap = try await db.collection("at_home_games")
+                .whereField("challengeId", isEqualTo: challengeId)
+                .getDocuments()
+
+            guard let doc = snap.documents.first else {
+                // Not an at-home game (or not seeded yet)
+                return
+            }
+
+            try await doc.reference.updateData([
+                "state": "archived",
+                "finalizedAt": FieldValue.serverTimestamp(),
+                "updatedAt": FieldValue.serverTimestamp()
+            ])
+        } catch {
+            // We intentionally don't fail the scoring finalize if archiving fails.
+            print("⚠️ Failed to archive at-home game for \(challengeId):", error)
+        }
+    }
+
+    // MARK: - Owner + status helpers
 
     private func isOwnerAccount() -> Bool {
         let role = session.profile?.role ?? ""
