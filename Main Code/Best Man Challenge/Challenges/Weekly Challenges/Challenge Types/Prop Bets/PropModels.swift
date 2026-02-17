@@ -5,7 +5,6 @@
 //  Created by Bret Clemetson on 2/3/26.
 //
 
-
 import Foundation
 import FirebaseFirestore
 
@@ -19,10 +18,19 @@ struct PropOption: Identifiable, Hashable {
 
     static func fromDict(_ dict: [String: Any]) -> PropOption? {
         guard let id = dict["id"] as? String else { return nil }
+
         let position = dict["position"] as? Int ?? 0
         let label = dict["label"] as? String ?? ""
-        let odds = dict["odds_american"] as? Int
-        return PropOption(id: id, position: position, label: label, oddsAmerican: odds)
+
+        // Support both snake_case and camelCase keys
+        let odds = (dict["odds_american"] as? Int) ?? (dict["oddsAmerican"] as? Int)
+
+        return PropOption(
+            id: id,
+            position: position,
+            label: label,
+            oddsAmerican: odds
+        )
     }
 }
 
@@ -41,6 +49,9 @@ struct PropBet: Identifiable, Hashable {
     let options: [PropOption]
     let isActive: Bool
 
+    /// ✅ New: answer key for scoring
+    let correctOptionId: String?
+
     static func fromDoc(id: String, data: [String: Any]) -> PropBet? {
         // Required-ish fields with safe defaults
         let position = data["position"] as? Int ?? 0
@@ -55,9 +66,15 @@ struct PropBet: Identifiable, Hashable {
         if let d = data["line"] as? Double { line = d }
         else if let i = data["line"] as? Int { line = Double(i) }
 
+        // options
         let rawOptions = data["options"] as? [[String: Any]] ?? []
         let options = rawOptions.compactMap { PropOption.fromDict($0) }
             .sorted { $0.position < $1.position }
+
+        // ✅ decode correctOptionId (support both key styles)
+        let correctOptionId =
+            (data["correctOptionId"] as? String) ??
+            (data["correct_option_id"] as? String)
 
         // Must have an id + prompt at minimum
         guard !id.isEmpty, !prompt.isEmpty else { return nil }
@@ -70,7 +87,8 @@ struct PropBet: Identifiable, Hashable {
             market: market,
             line: line,
             options: options,
-            isActive: isActive
+            isActive: isActive,
+            correctOptionId: correctOptionId
         )
     }
 }

@@ -18,6 +18,16 @@ struct ChallengeContentView: View {
     let onSubmitRiddle: (String, Bool) async throws -> Void
     let onSubmitQuiz: (_ answers: [String: Int], _ score: Int, _ maxScore: Int) async throws -> Void
 
+    private var wordleFinished: Bool {
+        (challengeManager.lastSubmission ?? lastSubmission)?.isWordleFinished == true
+    }
+
+    private var isLocked: Bool {
+        if let locksAt = challenge.locksAt { return Date() >= locksAt }
+        if let endDate = challenge.endDate { return Date() >= endDate }
+        return false
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
 
@@ -47,14 +57,25 @@ struct ChallengeContentView: View {
                 )
 
             case .riddle:
-                RiddleChallengeView(
-                    challenge: challenge,
-                    lastSubmission: lastSubmission,
-                    onSubmit: onSubmitRiddle
-                )
+                if challenge.isWordle {
+                    WordleView(
+                        challengeId: challenge.id,
+                        prompt: challenge.title,
+                        answer: challenge.wordleAnswer,
+                        wordLength: challenge.wordleWordLength,
+                        maxAttempts: challenge.wordleMaxAttempts,
+                        isLocked: challenge.isLocked || wordleFinished
+                    )
+                    .environmentObject(challengeManager)
+                } else {
+                    RiddleChallengeView(
+                        challenge: challenge,
+                        lastSubmission: lastSubmission,
+                        onSubmit: onSubmitRiddle
+                    )
+                }
 
             case .prop_bets:
-                // ✅ Prop Bets uses its own view + rules (no timer)
                 PropBetsView(challengeId: challenge.id)
 
             case .minesweeper:
@@ -63,6 +84,10 @@ struct ChallengeContentView: View {
 
             case .creative:
                 Text("Creative mode coming soon.")
+                    .foregroundColor(.secondary)
+
+            default:
+                Text("Unsupported challenge type.")
                     .foregroundColor(.secondary)
             }
 

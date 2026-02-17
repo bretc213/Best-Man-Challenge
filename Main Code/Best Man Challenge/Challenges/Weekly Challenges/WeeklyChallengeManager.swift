@@ -21,26 +21,27 @@ final class WeeklyChallengeManager: ObservableObject {
     @Published var currentChallenge: WeeklyChallenge?
     @Published var state: LoadState = .idle
 
-    // Quiz / Riddle submission (existing)
+    // Quiz / Riddle / Wordle submission (LIVE)
     @Published var lastSubmission: WeeklyChallengeSubmission?
 
-    // ✅ Prop bets submission summary (NEW)
+    // Prop bets submission summary (LIVE)
     @Published var propBetsPickSummary: PropBetsPickSummary?
 
-    // ✅ Store user context once (set from SessionStore)
+    // User context (from SessionStore)
     @Published private(set) var linkedPlayerId: String?
     @Published private(set) var displayName: String?
 
-    // ✅ Submitter identity used for doc id in quiz/riddle submissions
+    // /submissions/{submitterId}
     @Published private(set) var submitterId: String?
     @Published private(set) var submitterDisplayName: String?
 
-    // ✅ Raw auth uid (used for prop bets picks/{uid})
+    // Raw auth uid (prop bets uses picks/{uid})
     @Published private(set) var authUid: String?
 
     private let db = Firestore.firestore()
     private var activeListener: ListenerRegistration?
     private var propBetsPickListener: ListenerRegistration?
+    private var submissionListener: ListenerRegistration?
 
     init() {
         startActiveChallengeListener()
@@ -48,10 +49,8 @@ final class WeeklyChallengeManager: ObservableObject {
 
     deinit {
         activeListener?.remove()
-        activeListener = nil
-
         propBetsPickListener?.remove()
-        propBetsPickListener = nil
+        submissionListener?.remove()
     }
 
     func stopListening() {
@@ -60,6 +59,9 @@ final class WeeklyChallengeManager: ObservableObject {
 
         propBetsPickListener?.remove()
         propBetsPickListener = nil
+
+        submissionListener?.remove()
+        submissionListener = nil
     }
 
     func refresh() {
@@ -68,10 +70,39 @@ final class WeeklyChallengeManager: ObservableObject {
 
     // MARK: - User Context
 
+    /// ✅ Use linked_player_id if present, otherwise fall back to uid (NOT admin_ prefix)
     private func computeSubmitterId(uid: String, linkedPlayerId: String?) -> String {
         let lp = (linkedPlayerId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !lp.isEmpty { return lp }
-        return "admin_\(uid)"
+
+        let u = uid.trimmingCharacters(in: .whitespacesAndNewlines)
+        return u.isEmpty ? "" : u
+    }
+
+    /// Always returns the best submitter id we can, even if setUserContext wasn’t called yet.
+    private func resolvedSubmitterId() -> String? {
+        if let sid = submitterId, !sid.isEmpty { return sid }
+        guard let uid = Auth.auth().currentUser?.uid, !uid.isEmpty else { return nil }
+        return computeSubmitterId(uid: uid, linkedPlayerId: linkedPlayerId)
+    }
+
+    /// ✅ Canonical display name chooser (SessionStore name > Auth displayName > uid)
+    private func bestDisplayName(uid: String) -> String {
+        let authName = Auth.auth().currentUser?.displayName
+
+        let cleanedSubmitter =
+            (self.submitterDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines))
+                .flatMap { $0.isEmpty ? nil : $0 }
+
+        let cleanedProfile =
+            (self.displayName?.trimmingCharacters(in: .whitespacesAndNewlines))
+                .flatMap { $0.isEmpty ? nil : $0 }
+
+        let cleanedAuth =
+            (authName?.trimmingCharacters(in: .whitespacesAndNewlines))
+                .flatMap { $0.isEmpty ? nil : $0 }
+
+        return cleanedSubmitter ?? cleanedProfile ?? cleanedAuth ?? uid
     }
 
     /// Call this once you have a logged-in session (e.g., onAppear).
@@ -82,8 +113,6 @@ final class WeeklyChallengeManager: ObservableObject {
 
         self.linkedPlayerId = lp.isEmpty ? nil : lp
         self.displayName = dn.isEmpty ? nil : dn
-
-        // ✅ store raw auth uid (prop bets uses this)
         self.authUid = uidClean.isEmpty ? nil : uidClean
 
         guard !uidClean.isEmpty else {
@@ -92,27 +121,30 @@ final class WeeklyChallengeManager: ObservableObject {
             self.lastSubmission = nil
             self.propBetsPickSummary = nil
             stopPropBetsPickListener()
+            stopSubmissionListener()
             return
         }
 
-        // quiz/riddle submission identity (existing behavior)
         let sid = computeSubmitterId(uid: uidClean, linkedPlayerId: self.linkedPlayerId)
         self.submitterId = sid
 
+        // Prefer SessionStore displayName; fall back to Auth displayName; then sid
+        let authName = Auth.auth().currentUser?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let dn = self.displayName, !dn.isEmpty {
             self.submitterDisplayName = dn
-        } else if sid.hasPrefix("admin_") {
-            self.submitterDisplayName = "Admin"
+        } else if let authName, !authName.isEmpty {
+            self.submitterDisplayName = authName
         } else {
             self.submitterDisplayName = sid
         }
 
-        // ✅ once we have a challenge, load correct submission type
         if let challenge = currentChallenge {
             updateSubmissionListeners(for: challenge)
-        } else {
-            self.lastSubmission = nil
-            self.propBetsPickSummary = nil
+
+            // ✅ If you previously wrote uid/Unknown into the submission doc, patch it once
+            Task { @MainActor in
+                await self.backfillSubmissionDisplayNameIfNeeded(challengeId: challenge.id)
+            }
         }
     }
 
@@ -128,6 +160,7 @@ final class WeeklyChallengeManager: ObservableObject {
         activeListener = nil
 
         stopPropBetsPickListener()
+        stopSubmissionListener()
 
         activeListener = db.collection("weekly_challenges")
             .whereField("is_active", isEqualTo: true)
@@ -142,6 +175,7 @@ final class WeeklyChallengeManager: ObservableObject {
                         self.lastSubmission = nil
                         self.propBetsPickSummary = nil
                         self.stopPropBetsPickListener()
+                        self.stopSubmissionListener()
                     }
                     return
                 }
@@ -153,11 +187,16 @@ final class WeeklyChallengeManager: ObservableObject {
                         self.lastSubmission = nil
                         self.propBetsPickSummary = nil
                         self.stopPropBetsPickListener()
+                        self.stopSubmissionListener()
                     }
                     return
                 }
 
                 guard let challenge = Self.parseWeeklyChallenge(doc: doc) else {
+                    let raw = doc.data()
+                    print("❌ Failed to parse weekly challenge:", doc.documentID)
+                    for (k, v) in raw { print("• \(k): \(type(of: v)) => \(v)") }
+
                     Task { @MainActor in
                         self.state = .failed(
                             "Weekly challenge document has invalid or missing fields.\n" +
@@ -167,6 +206,7 @@ final class WeeklyChallengeManager: ObservableObject {
                         self.lastSubmission = nil
                         self.propBetsPickSummary = nil
                         self.stopPropBetsPickListener()
+                        self.stopSubmissionListener()
                     }
                     return
                 }
@@ -174,8 +214,10 @@ final class WeeklyChallengeManager: ObservableObject {
                 Task { @MainActor in
                     self.currentChallenge = challenge
                     self.state = .loaded
-
                     self.updateSubmissionListeners(for: challenge)
+
+                    // ✅ If we already have a submission and the profile name is now known, patch it once
+                    await self.backfillSubmissionDisplayNameIfNeeded(challengeId: challenge.id)
                 }
             }
     }
@@ -183,12 +225,13 @@ final class WeeklyChallengeManager: ObservableObject {
     // MARK: - Submission listeners routing
 
     private func updateSubmissionListeners(for challenge: WeeklyChallenge) {
-        // Always reset both, then start the correct one
+        // reset
         self.lastSubmission = nil
         self.propBetsPickSummary = nil
         stopPropBetsPickListener()
+        stopSubmissionListener()
 
-        // ✅ Prop bets uses /picks/{uid}
+        // Prop bets uses picks/{uid}
         if challenge.type == .prop_bets {
             if let uid = self.authUid, !uid.isEmpty {
                 startPropBetsPickListener(challengeId: challenge.id, uid: uid)
@@ -196,12 +239,13 @@ final class WeeklyChallengeManager: ObservableObject {
             return
         }
 
-        // ✅ Quiz/Riddle uses /submissions/{submitterId}
-        if let sid = self.submitterId {
-            loadMyLatestSubmissionIfPossible(challengeId: challenge.id, submitterId: sid)
-        } else {
+        // Everything else uses submissions/{submitterId}
+        guard let sid = resolvedSubmitterId(), !sid.isEmpty else {
             self.lastSubmission = nil
+            return
         }
+
+        startSubmissionListener(challengeId: challenge.id, submitterId: sid)
     }
 
     private func stopPropBetsPickListener() {
@@ -221,7 +265,6 @@ final class WeeklyChallengeManager: ObservableObject {
             guard let self else { return }
 
             if let err = err {
-                // Don’t hard-fail the whole view; just log
                 print("⚠️ prop bets pick listener error:", err.localizedDescription)
                 return
             }
@@ -233,6 +276,7 @@ final class WeeklyChallengeManager: ObservableObject {
 
             let selections = data["selections"] as? [String: String] ?? [:]
             let submittedAt = (data["submitted_at"] as? Timestamp)?.dateValue()
+                ?? (data["submittedAt"] as? Timestamp)?.dateValue()
 
             Task { @MainActor in
                 self.propBetsPickSummary = PropBetsPickSummary(
@@ -243,42 +287,131 @@ final class WeeklyChallengeManager: ObservableObject {
         }
     }
 
-    // MARK: - Parsing (shared)
+    // MARK: - LIVE submission listener (Quiz / Riddle / Wordle)
 
-    /// ✅ Shared parser used here + HistoryStore
+    private func stopSubmissionListener() {
+        submissionListener?.remove()
+        submissionListener = nil
+    }
+
+    private func startSubmissionListener(challengeId: String, submitterId: String) {
+        stopSubmissionListener()
+
+        let ref = db.collection("weekly_challenges")
+            .document(challengeId)
+            .collection("submissions")
+            .document(submitterId)
+
+        submissionListener = ref.addSnapshotListener { [weak self] snap, err in
+            guard let self else { return }
+
+            if let err = err {
+                print("⚠️ submission listener error:", err.localizedDescription)
+                return
+            }
+
+            guard let snap, snap.exists, let data = snap.data() else {
+                Task { @MainActor in self.lastSubmission = nil }
+                return
+            }
+
+            let submission = self.parseSubmissionDoc(submitterId: submitterId, data: data)
+            Task { @MainActor in
+                self.lastSubmission = submission
+            }
+        }
+    }
+
+    // MARK: - Backfill display name (fix old submissions that wrote uid/Unknown)
+
+    private func backfillSubmissionDisplayNameIfNeeded(challengeId: String) async {
+        // Only for submissions/{submitterId} challenges (not prop bets)
+        guard currentChallenge?.type != .prop_bets else { return }
+        guard let uid = Auth.auth().currentUser?.uid, !uid.isEmpty else { return }
+        guard let sid = resolvedSubmitterId(), !sid.isEmpty else { return }
+
+        let desired = bestDisplayName(uid: uid).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !desired.isEmpty, desired.lowercased() != "unknown", desired != uid else { return }
+
+        do {
+            let ref = db.collection("weekly_challenges")
+                .document(challengeId)
+                .collection("submissions")
+                .document(sid)
+
+            let snap = try await ref.getDocument()
+            guard snap.exists else { return }
+            let data = snap.data() ?? [:]
+
+            let existing = (data["display_name"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Patch only if missing/unknown/equals uid
+            if existing == nil || existing?.isEmpty == true || existing?.lowercased() == "unknown" || existing == uid {
+                try await ref.setData(["display_name": desired], merge: true)
+            }
+        } catch {
+            print("⚠️ backfillSubmissionDisplayNameIfNeeded failed:", error.localizedDescription)
+        }
+    }
+
+    // MARK: - Parsing (Weekly Challenge)
+
     static func parseWeeklyChallenge(doc: QueryDocumentSnapshot) -> WeeklyChallenge? {
         let data = doc.data()
 
-        guard
-            let week = data["week"] as? Int,
-            let title = data["title"] as? String,
-            let description = data["description"] as? String,
-            let typeRaw = data["type"] as? String,
-            let type = ChallengeType(rawValue: typeRaw)
-        else {
+        func intValue(_ any: Any?) -> Int? {
+            if let i = any as? Int { return i }
+            if let i = any as? Int64 { return Int(i) }
+            if let d = any as? Double { return Int(d) }
+            if let n = any as? NSNumber { return n.intValue }
             return nil
         }
 
-        // Optional dates (prop_bets may not have them)
+        func boolValue(_ any: Any?) -> Bool? {
+            if let b = any as? Bool { return b }
+            if let n = any as? NSNumber { return n.boolValue }
+            return nil
+        }
+
+        func stringValue(_ any: Any?) -> String? { any as? String }
+
+        guard
+            let week = intValue(data["week"]),
+            let title = stringValue(data["title"]),
+            let description = stringValue(data["description"]),
+            let typeRaw = stringValue(data["type"]),
+            let type = ChallengeType(rawValue: typeRaw)
+        else { return nil }
+
         let startDate = (data["startDate"] as? Timestamp)?.dateValue()
-        let endDate = (data["endDate"] as? Timestamp)?.dateValue()
+        let endDate   = (data["endDate"] as? Timestamp)?.dateValue()
+        let locksAt   = (data["locksAt"] as? Timestamp)?.dateValue()
 
-        // ✅ locksAt (for prop_bets)
-        let locksAt = (data["locksAt"] as? Timestamp)?.dateValue()
+        let answer = stringValue(data["answer"])
+        let isActiveFlag = boolValue(data["is_active"])
 
-        let answer = data["answer"] as? String
-        let isActiveFlag = data["is_active"] as? Bool
+        // Wordle extras (optional)
+        let gameFormat = stringValue(data["game_format"])
+        var wordle: WeeklyChallengeWordle? = nil
+        if let w = data["wordle"] as? [String: Any] {
+            wordle = WeeklyChallengeWordle(
+                word_length: intValue(w["word_length"]),
+                max_attempts: intValue(w["max_attempts"]),
+                answer: stringValue(w["answer"])
+            )
+        }
 
         // Puzzle (optional)
         var puzzle: WeeklyChallengePuzzle? = nil
         if let p = data["puzzle"] as? [String: Any] {
             puzzle = WeeklyChallengePuzzle(
-                type: p["type"] as? String,
-                size: p["size"] as? Int,
+                type: stringValue(p["type"]),
+                size: intValue(p["size"]),
                 grid: p["grid"] as? [Int],
-                unlock_rule: p["unlock_rule"] as? String,
-                unlock_value: p["unlock_value"] as? Int,
-                unlock_text: p["unlock_text"] as? String
+                unlock_rule: stringValue(p["unlock_rule"]),
+                unlock_value: intValue(p["unlock_value"]),
+                unlock_text: stringValue(p["unlock_text"])
             )
         }
 
@@ -286,35 +419,33 @@ final class WeeklyChallengeManager: ObservableObject {
         var cipher: WeeklyChallengeCipher? = nil
         if let c = data["cipher"] as? [String: Any] {
             cipher = WeeklyChallengeCipher(
-                type: c["type"] as? String,
-                ciphertext: c["ciphertext"] as? String,
-                direction: c["direction"] as? String,
-                shift: c["shift"] as? Int
+                type: stringValue(c["type"]),
+                ciphertext: stringValue(c["ciphertext"]),
+                direction: stringValue(c["direction"]),
+                shift: intValue(c["shift"])
             )
         }
 
         // Quiz (optional)
         var quiz: WeeklyChallengeQuiz? = nil
         if let q = data["quiz"] as? [String: Any] {
-            let pointsPerCorrect = q["points_per_correct"] as? Int
+            let pointsPerCorrect = intValue(q["points_per_correct"])
             var questions: [WeeklyQuizQuestion] = []
 
             if let rawQs = q["questions"] as? [[String: Any]] {
                 for rq in rawQs {
                     guard
-                        let id = rq["id"] as? String,
-                        let prompt = rq["prompt"] as? String,
+                        let id = stringValue(rq["id"]),
+                        let prompt = stringValue(rq["prompt"]),
                         let options = rq["options"] as? [String]
                     else { continue }
-
-                    let correctIndex = rq["correct_index"] as? Int
 
                     questions.append(
                         WeeklyQuizQuestion(
                             id: id,
                             prompt: prompt,
                             options: options,
-                            correct_index: correctIndex
+                            correct_index: intValue(rq["correct_index"])
                         )
                     )
                 }
@@ -339,86 +470,66 @@ final class WeeklyChallengeManager: ObservableObject {
             puzzle: puzzle,
             cipher: cipher,
             quiz: quiz,
+            wordle: wordle,
+            game_format: gameFormat,
             is_active: isActiveFlag
         )
     }
 
-    // MARK: - My Submission (by submitterId) - quiz/riddle only
+    // MARK: - Submission parsing
 
-    private func loadMyLatestSubmissionIfPossible(challengeId: String, submitterId: String) {
-        db.collection("weekly_challenges")
-            .document(challengeId)
-            .collection("submissions")
-            .document(submitterId)
-            .getDocument { [weak self] snap, _ in
-                guard let self else { return }
-                guard let snap, snap.exists else {
-                    Task { @MainActor in self.lastSubmission = nil }
-                    return
-                }
-
-                let data = snap.data() ?? [:]
-                let submittedAt =
-                    (data["submittedAt"] as? Timestamp)?.dateValue()
-                    ?? (data["submitted_at"] as? Timestamp)?.dateValue()
-                    ?? Date()
-
-                let lp = data["linked_player_id"] as? String
-                let dn = data["display_name"] as? String
-                let uid = data["uid"] as? String ?? ""
-
-                if let score = data["score"] as? Int {
-                    let maxScore = (data["maxScore"] as? Int) ?? (data["max_score"] as? Int)
-                    let answers = data["answers"] as? [String: Int]
-
-                    let sub = WeeklyChallengeSubmission(
-                        id: submitterId,
-                        uid: uid,
-                        linkedPlayerId: lp,
-                        displayName: dn,
-                        answerText: nil,
-                        isCorrect: nil,
-                        answers: answers,
-                        score: score,
-                        maxScore: maxScore,
-                        submittedAt: submittedAt
-                    )
-
-                    Task { @MainActor in self.lastSubmission = sub }
-                    return
-                }
-
-                if let answerText = data["answerText"] as? String,
-                   let isCorrect = data["isCorrect"] as? Bool {
-
-                    let cleaned = answerText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if cleaned.isEmpty || cleaned.lowercased() == "null" {
-                        Task { @MainActor in self.lastSubmission = nil }
-                        return
-                    }
-
-                    let sub = WeeklyChallengeSubmission(
-                        id: submitterId,
-                        uid: uid,
-                        linkedPlayerId: lp,
-                        displayName: dn,
-                        answerText: cleaned,
-                        isCorrect: isCorrect,
-                        answers: nil,
-                        score: nil,
-                        maxScore: nil,
-                        submittedAt: submittedAt
-                    )
-
-                    Task { @MainActor in self.lastSubmission = sub }
-                    return
-                }
-
-                Task { @MainActor in self.lastSubmission = nil }
-            }
+    private func intValue(_ any: Any?) -> Int? {
+        if let i = any as? Int { return i }
+        if let i = any as? Int64 { return Int(i) }
+        if let d = any as? Double { return Int(d) }
+        if let n = any as? NSNumber { return n.intValue }
+        return nil
     }
 
-    // MARK: - Submitters (quiz/riddle)
+    private func parseSubmissionDoc(submitterId: String, data: [String: Any]) -> WeeklyChallengeSubmission {
+        let submittedAt =
+            (data["submittedAt"] as? Timestamp)?.dateValue()
+            ?? (data["submitted_at"] as? Timestamp)?.dateValue()
+            ?? Date()
+
+        let uid = data["uid"] as? String ?? ""
+        let lp = data["linked_player_id"] as? String
+        let dn = data["display_name"] as? String
+
+        // Wordle fields
+        let wordleAttempts = intValue(data["wordle_attempts"])
+        let wordleSolved = data["wordle_solved"] as? Bool
+        let wordleGuesses = data["wordle_guesses"] as? [String]
+
+        // Score-based (Quiz OR Wordle result)
+        let score = intValue(data["score"])
+        let maxScore = intValue(data["maxScore"]) ?? intValue(data["max_score"])
+
+        // Quiz answers (optional)
+        let answers = data["answers"] as? [String: Int]
+
+        // Riddle fields
+        let answerText = data["answerText"] as? String
+        let isCorrect = data["isCorrect"] as? Bool
+
+        return WeeklyChallengeSubmission(
+            id: submitterId,
+            uid: uid,
+            linkedPlayerId: lp,
+            displayName: dn,
+            answerText: answerText,
+            isCorrect: isCorrect,
+            answers: answers,
+            score: score,
+            maxScore: maxScore,
+            wordleAttempts: wordleAttempts,
+            wordleSolved: wordleSolved,
+            wordleGuesses: wordleGuesses,
+            submittedAt: submittedAt
+        )
+    }
+
+    // MARK: - Submitters (Riddle / Quiz)
 
     func submitRiddleAnswer(_ text: String, isCorrect: Bool) async throws {
         guard let challengeId = currentChallenge?.id else {
@@ -429,7 +540,7 @@ final class WeeklyChallengeManager: ObservableObject {
             throw NSError(domain: "WeeklyChallenge", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "You must be logged in to submit."])
         }
-        guard let submitterId = self.submitterId else {
+        guard let sid = resolvedSubmitterId() else {
             throw NSError(domain: "WeeklyChallenge", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
         }
@@ -440,10 +551,12 @@ final class WeeklyChallengeManager: ObservableObject {
                           userInfo: [NSLocalizedDescriptionKey: "Answer cannot be empty."])
         }
 
+        let bestName = bestDisplayName(uid: uid)
+
         let payload: [String: Any] = [
             "uid": uid,
             "linked_player_id": self.linkedPlayerId as Any,
-            "display_name": self.submitterDisplayName ?? self.displayName ?? "Unknown",
+            "display_name": bestName,
             "answerText": cleaned,
             "isCorrect": isCorrect,
             "submittedAt": Timestamp(date: Date())
@@ -452,21 +565,8 @@ final class WeeklyChallengeManager: ObservableObject {
         try await db.collection("weekly_challenges")
             .document(challengeId)
             .collection("submissions")
-            .document(submitterId)
+            .document(sid)
             .setData(payload, merge: true)
-
-        self.lastSubmission = WeeklyChallengeSubmission(
-            id: submitterId,
-            uid: uid,
-            linkedPlayerId: self.linkedPlayerId,
-            displayName: self.submitterDisplayName ?? self.displayName,
-            answerText: cleaned,
-            isCorrect: isCorrect,
-            answers: nil,
-            score: nil,
-            maxScore: nil,
-            submittedAt: Date()
-        )
     }
 
     func submitQuiz(answers: [String: Int], score: Int, maxScore: Int) async throws {
@@ -478,15 +578,17 @@ final class WeeklyChallengeManager: ObservableObject {
             throw NSError(domain: "WeeklyChallenge", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "You must be logged in to submit."])
         }
-        guard let submitterId = self.submitterId else {
+        guard let sid = resolvedSubmitterId() else {
             throw NSError(domain: "WeeklyChallenge", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
         }
 
+        let bestName = bestDisplayName(uid: uid)
+
         let payload: [String: Any] = [
             "uid": uid,
             "linked_player_id": self.linkedPlayerId as Any,
-            "display_name": self.submitterDisplayName ?? self.displayName ?? "Unknown",
+            "display_name": bestName,
             "answers": answers,
             "score": score,
             "maxScore": maxScore,
@@ -496,21 +598,127 @@ final class WeeklyChallengeManager: ObservableObject {
         try await db.collection("weekly_challenges")
             .document(challengeId)
             .collection("submissions")
-            .document(submitterId)
+            .document(sid)
+            .setData(payload, merge: true)
+    }
+
+    // MARK: - Wordle: finish submit (points + completion)
+
+    func submitWordleResult(
+        challengeId: String,
+        attemptsUsed: Int,
+        solved: Bool,
+        guesses: [String],
+        maxAttempts: Int
+    ) async throws {
+
+        guard let uid = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "WeeklyChallenge", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "You must be logged in to submit."])
+        }
+        guard let sid = resolvedSubmitterId() else {
+            throw NSError(domain: "WeeklyChallenge", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
+        }
+
+        let bestName = bestDisplayName(uid: uid)
+
+        // Scoring: solved in 1 => maxAttempts, solved in maxAttempts => 1, fail => 0
+        let points = solved ? max(1, (maxAttempts + 6) - attemptsUsed) : 0
+        let now = Date()
+
+        let payload: [String: Any] = [
+            "uid": uid,
+            "linked_player_id": self.linkedPlayerId as Any,
+            "display_name": bestName,
+
+            "score": points,
+            "maxScore": maxAttempts,
+            "submittedAt": Timestamp(date: now),
+
+            "wordle_attempts": attemptsUsed,
+            "wordle_solved": solved,
+            "wordle_guesses": guesses
+        ]
+
+        try await db.collection("weekly_challenges")
+            .document(challengeId)
+            .collection("submissions")
+            .document(sid)
             .setData(payload, merge: true)
 
+        // Keep UI snappy; listener will also update
         self.lastSubmission = WeeklyChallengeSubmission(
-            id: submitterId,
+            id: sid,
             uid: uid,
             linkedPlayerId: self.linkedPlayerId,
-            displayName: self.submitterDisplayName ?? self.displayName,
+            displayName: bestName,
             answerText: nil,
             isCorrect: nil,
-            answers: answers,
-            score: score,
-            maxScore: maxScore,
-            submittedAt: Date()
+            answers: nil,
+            score: points,
+            maxScore: maxAttempts,
+            wordleAttempts: attemptsUsed,
+            wordleSolved: solved,
+            wordleGuesses: guesses,
+            submittedAt: now
         )
+    }
+
+    // MARK: - Wordle Progress (persist after ENTER, restore on reopen)
+
+    func saveWordleProgress(challengeId: String, guesses: [String]) async throws {
+        guard let uid = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "WeeklyChallenge", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "You must be logged in."])
+        }
+        guard let sid = resolvedSubmitterId() else {
+            throw NSError(domain: "WeeklyChallenge", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
+        }
+
+        // Don’t overwrite finished result
+        if let sub = self.lastSubmission, sub.isWordleFinished { return }
+
+        let bestName = bestDisplayName(uid: uid)
+
+        let payload: [String: Any] = [
+            "uid": uid,
+            "linked_player_id": self.linkedPlayerId as Any,
+            "display_name": bestName,
+            "wordle_progress_guesses": guesses,
+            "wordle_progress_updatedAt": Timestamp(date: Date())
+        ]
+
+        try await db.collection("weekly_challenges")
+            .document(challengeId)
+            .collection("submissions")
+            .document(sid)
+            .setData(payload, merge: true)
+    }
+
+    func loadWordleProgress(challengeId: String) async -> [String] {
+        guard let sid = resolvedSubmitterId() else { return [] }
+
+        do {
+            let snap = try await db.collection("weekly_challenges")
+                .document(challengeId)
+                .collection("submissions")
+                .document(sid)
+                .getDocument()
+
+            guard snap.exists, let data = snap.data() else { return [] }
+
+            // If finished, return final guesses
+            if let finished = data["wordle_guesses"] as? [String], !finished.isEmpty {
+                return finished
+            }
+
+            return data["wordle_progress_guesses"] as? [String] ?? []
+        } catch {
+            print("⚠️ loadWordleProgress failed:", error.localizedDescription)
+            return []
+        }
     }
 }
 
@@ -530,10 +738,52 @@ struct WeeklyChallengeSubmission: Identifiable {
     let score: Int?
     let maxScore: Int?
 
+    // Wordle (optional)
+    let wordleAttempts: Int?
+    let wordleSolved: Bool?
+    let wordleGuesses: [String]?
+
     let submittedAt: Date
+
+    var isWordleFinished: Bool {
+        return wordleSolved != nil
+            || wordleAttempts != nil
+            || (wordleGuesses?.isEmpty == false)
+    }
+
+    init(
+        id: String,
+        uid: String,
+        linkedPlayerId: String? = nil,
+        displayName: String? = nil,
+        answerText: String? = nil,
+        isCorrect: Bool? = nil,
+        answers: [String: Int]? = nil,
+        score: Int? = nil,
+        maxScore: Int? = nil,
+        wordleAttempts: Int? = nil,
+        wordleSolved: Bool? = nil,
+        wordleGuesses: [String]? = nil,
+        submittedAt: Date
+    ) {
+        self.id = id
+        self.uid = uid
+        self.linkedPlayerId = linkedPlayerId
+        self.displayName = displayName
+        self.answerText = answerText
+        self.isCorrect = isCorrect
+        self.answers = answers
+        self.score = score
+        self.maxScore = maxScore
+        self.wordleAttempts = wordleAttempts
+        self.wordleSolved = wordleSolved
+        self.wordleGuesses = wordleGuesses
+        self.submittedAt = submittedAt
+    }
 }
 
-// ✅ NEW: prop bets submission summary
+// MARK: - Prop bets summary
+
 struct PropBetsPickSummary {
     let submittedAt: Date?
     let selections: [String: String]

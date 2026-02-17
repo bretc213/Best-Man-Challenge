@@ -7,6 +7,7 @@ struct WeeklyChallengeView: View {
 
     @State private var showQuiz = false
     @State private var showPropBets = false
+    @State private var showWordle = false
 
     private func deadlineDate(for challenge: WeeklyChallenge) -> Date? {
         challenge.locksAt ?? challenge.endDate
@@ -26,14 +27,38 @@ struct WeeklyChallengeView: View {
         isLocked(challenge) ? "View Picks (Locked)" : "Make Picks"
     }
 
+    private func wordleFinished() -> Bool {
+        challengeManager.lastSubmission?.isWordleFinished == true
+    }
+
+    private func wordleButtonTitle(for challenge: WeeklyChallenge) -> String {
+        if wordleFinished() { return "Weekly Challenge Completed" }
+        if isLocked(challenge) { return "Wordle (Locked)" }
+        return "Play Wordle"
+    }
+
+    private func syncUserContextIntoManager() {
+        challengeManager.setUserContext(
+            uid: Auth.auth().currentUser?.uid,
+            linkedPlayerId: session.profile?.linkedPlayerId,
+            displayName: session.profile?.displayName
+        )
+    }
+
     var body: some View {
         content
             .onAppear {
-                challengeManager.setUserContext(
-                    uid: Auth.auth().currentUser?.uid,
-                    linkedPlayerId: session.profile?.linkedPlayerId,
-                    displayName: session.profile?.displayName
-                )
+                syncUserContextIntoManager()
+            }
+            // ✅ IMPORTANT: profile loads async, so re-sync when it arrives/changes
+            .onChange(of: session.profile?.displayName) { _, _ in
+                syncUserContextIntoManager()
+            }
+            .onChange(of: session.profile?.linkedPlayerId) { _, _ in
+                syncUserContextIntoManager()
+            }
+            .onChange(of: session.firebaseUser?.uid) { _, _ in
+                syncUserContextIntoManager()
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -57,8 +82,25 @@ struct WeeklyChallengeView: View {
                     Text("No active challenge.").navigationTitle("Prop Bets")
                 }
             }
+            .navigationDestination(isPresented: $showWordle) {
+                if let challenge = challengeManager.currentChallenge {
+                    WordleView(
+                        challengeId: challenge.id,
+                        prompt: challenge.title,
+                        answer: challenge.wordle?.answer,
+                        wordLength: challenge.wordle?.word_length,
+                        maxAttempts: challenge.wordle?.max_attempts,
+                        isLocked: isLocked(challenge) || wordleFinished()
+                    )
+                    .environmentObject(challengeManager)
+                } else {
+                    Text("No active challenge.")
+                        .navigationTitle("Wordle")
+                }
+            }
     }
 
+    // --- the rest of your file stays the same ---
     @ViewBuilder
     private var content: some View {
         switch challengeManager.state {
@@ -102,15 +144,16 @@ struct WeeklyChallengeView: View {
     }
 
     private func loadedView(_ challenge: WeeklyChallenge) -> some View {
-        ScrollView {
+        let locked = isLocked(challenge)
+        let finishedWordle = wordleFinished()
+
+        return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 headerCard(challenge)
 
-                // ✅ Quiz CTA + timer copy ONLY for quiz
                 if challenge.type == .quiz {
                     Button { showQuiz = true } label: {
-                        Text(quizButtonTitle(for: challenge))
-                            .frame(maxWidth: .infinity)
+                        Text(quizButtonTitle(for: challenge)).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
 
@@ -119,29 +162,48 @@ struct WeeklyChallengeView: View {
                         .font(.footnote)
                 }
 
-                // ✅ Prop Bets CTA (no timer)
                 if challenge.type == .prop_bets {
                     Button { showPropBets = true } label: {
-                        Text(propBetsButtonTitle(for: challenge))
-                            .frame(maxWidth: .infinity)
+                        Text(propBetsButtonTitle(for: challenge)).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
 
-                    Text(isLocked(challenge) ? "Picks are locked." : "You can change picks any time before kickoff.")
+                    Text(locked ? "Picks are locked." : "You can change picks any time before kickoff.")
                         .foregroundStyle(.secondary)
                         .font(.footnote)
                 }
 
-                // ✅ Submission section: quiz/riddle vs prop bets
+                if challenge.isWordle {
+                    Button {
+                        guard !finishedWordle else { return }
+                        showWordle = true
+                    } label: {
+                        Text(wordleButtonTitle(for: challenge)).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(finishedWordle)
+
+                    Text(finishedWordle ? "Completed — you can’t re-enter this week’s Wordle." :
+                            (locked ? "Locked." : "Progress saves after each guess."))
+                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                }
+
                 if challenge.type == .prop_bets {
                     if let summary = challengeManager.propBetsPickSummary, summary.hasSubmitted {
                         propBetsSubmissionCard(summary, challenge: challenge)
                     } else {
                         noSubmissionCard
                     }
+                } else if challenge.isWordle {
+                    if let sub = challengeManager.lastSubmission, sub.isWordleFinished {
+                        wordleSubmissionCard(sub, maxAttempts: challenge.wordle?.max_attempts ?? 6)
+                    } else {
+                        noSubmissionCard
+                    }
                 } else {
                     if let last = challengeManager.lastSubmission {
-                        lastSubmissionCard(last, challenge: challenge)
+                        lastSubmissionCard(last)
                     } else {
                         noSubmissionCard
                     }
@@ -150,6 +212,11 @@ struct WeeklyChallengeView: View {
             .padding()
         }
     }
+
+
+
+
+    // MARK: - Cards
 
     private func headerCard(_ challenge: WeeklyChallenge) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -180,7 +247,7 @@ struct WeeklyChallengeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func lastSubmissionCard(_ submission: WeeklyChallengeSubmission, challenge: WeeklyChallenge) -> some View {
+    private func lastSubmissionCard(_ submission: WeeklyChallengeSubmission) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Your submission").font(.headline)
             Text("Submitted \(submission.submittedAt.formatted(date: .abbreviated, time: .shortened))")
@@ -199,15 +266,44 @@ struct WeeklyChallengeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
+    private func wordleSubmissionCard(_ submission: WeeklyChallengeSubmission, maxAttempts: Int) -> some View {
+        let attempts = submission.wordleAttempts ?? maxAttempts
+        let solved = submission.wordleSolved ?? ((submission.score ?? 0) > 0)
+        let points = submission.score ?? 0
+
+        let resultText: String = {
+            if solved {
+                return "✅ Correct in \(attempts) \(attempts == 1 ? "guess" : "guesses")"
+            } else {
+                return "❌ Out of tries"
+            }
+        }()
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Weekly challenge completed")
+                .font(.headline)
+
+            Text(resultText)
+                .foregroundStyle(.primary)
+
+            Text("Points: \(points)")
+                .foregroundStyle(.secondary)
+
+            Text("Submitted \(submission.submittedAt.formatted(date: .abbreviated, time: .shortened))")
+                .foregroundStyle(.secondary)
+                .font(.footnote)
+        }
+        .padding()
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
     private func propBetsSubmissionCard(_ summary: PropBetsPickSummary, challenge: WeeklyChallenge) -> some View {
         let submittedText: String = {
             guard let d = summary.submittedAt else { return "Submitted —" }
             return "Submitted \(d.formatted(date: .abbreviated, time: .shortened))"
         }()
 
-        let totalProps = max(challengeManager.currentChallenge == nil ? 0 : 0, 0) // placeholder; we don't have props count here
-        // We can’t know total props count from this screen without querying subcollection.
-        // So we show picks count only (still useful).
         return VStack(alignment: .leading, spacing: 10) {
             Text("Your submission")
                 .font(.headline)
@@ -218,15 +314,9 @@ struct WeeklyChallengeView: View {
             Text("Picks submitted: \(summary.selections.count)")
                 .foregroundStyle(.primary)
 
-            if isLocked(challenge) {
-                Text("Locked.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("You can still update picks until kickoff.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            Text(isLocked(challenge) ? "Locked." : "You can still update picks until kickoff.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
         .padding()
         .background(.thinMaterial)
