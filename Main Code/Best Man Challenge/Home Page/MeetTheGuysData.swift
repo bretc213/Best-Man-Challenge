@@ -130,6 +130,18 @@ enum MeetTheGuysData {
             funFacts: "Turkey Bowl legend. Glue guy. Jägerbomb enthusiast.",
             photoAssetName: "joelr"
         ),
+        
+        MeetTheGuy(
+            id: "matthewc",
+            name: "Matthew Carlos",
+            email: "matthewcarlos001@gmail.com",
+            nickname: "6263395578",
+            relationship: "Met him the first day of kindergarten",
+            favoriteMemory: "Last day of school tradition, first time playing beer pong, & walks to Taco Bell / gas station.",
+            rating: "100",
+            funFacts: "My name is matt , im one of bret's first friends and his cutest one (according to him). I bleed Dodger blue. ",
+            photoAssetName: "matthewc"
+        ),
 
         MeetTheGuy(
             id: "bretc",
