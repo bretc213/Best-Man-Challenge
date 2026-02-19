@@ -167,6 +167,9 @@ struct AtHomeGamesView: View {
 
             case "nfl_playoffs":
                 NFLPlayoffsRootView()
+            
+            case "wbc_2026":
+                WBC2026RootView()
 
             default:
                 ComingSoonChallengeView(
