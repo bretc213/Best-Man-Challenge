@@ -54,6 +54,17 @@ struct AdminScoringHubView: View {
                 header()
 
                 List {
+                    
+                    Section("Maintenance") {
+                        Button {
+                            Task { await recomputeAllPlayerTotalsFromLedger() }
+                        } label: {
+                            Label("Recompute Totals From Ledger", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!isOwnerAccount() || isRunning)
+                    }
+
 
                     // -------------------------------
                     // Challenge Finalizers
@@ -184,6 +195,45 @@ struct AdminScoringHubView: View {
             }
         }
     }
+    
+    private func recomputeAllPlayerTotalsFromLedger() async {
+        guard isOwnerAccount() else {
+            setStatus("Only owners can recompute totals.", temporary: true)
+            return
+        }
+
+        isRunning = true
+        setStatus("Recomputing totals from point_awards ledger...", temporary: false)
+
+        do {
+            // 1) Get all player ids from players collection
+            let playersSnap = try await db.collection("players").getDocuments()
+            let playerIds = playersSnap.documents.map { $0.documentID }
+
+            // 2) For each player, sum their ledger and write total_points
+            for pid in playerIds {
+                let awardsSnap = try await db.collection("point_awards")
+                    .whereField("playerId", isEqualTo: pid)
+                    .getDocuments()
+
+                let total = awardsSnap.documents.reduce(0.0) { partial, doc in
+                    partial + ((doc.data()["points"] as? NSNumber)?.doubleValue ?? 0.0)
+                }
+
+                try await db.collection("players").document(pid).setData([
+                    "total_points": total,
+                    "updated_at": FieldValue.serverTimestamp()
+                ], merge: true)
+            }
+
+            setStatus("✅ Totals recomputed from ledger for \(playerIds.count) players.", temporary: true)
+        } catch {
+            setStatus("Recompute failed: \(error.localizedDescription)", temporary: true)
+        }
+
+        isRunning = false
+    }
+
 
     private func header() -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -224,7 +274,7 @@ struct AdminScoringHubView: View {
             ChallengeRow(
                 id: "nfl_playoffs_2026_overall",
                 title: "NFL Playoffs 2026 (Overall)",
-                multiplier: 3,
+                multiplier: 1,
                 description: "Totals across all rounds (computed from Firestore via NFLPlayoffsScoresStore).",
                 higherIsBetter: true,
                 archivesAtHomeOnFinalize: true, // ✅ only archive when OVERALL is finalized
@@ -233,7 +283,21 @@ struct AdminScoringHubView: View {
                     let provider = NFLPlayoffsScoresProvider(store: store)
                     return try await provider.fetchScoresByPlayer()
                 }
+            ),
+            ChallengeRow(
+                id: "wbc_2026_overall",
+                title: "WBC 2026 (Overall)",
+                multiplier: 1, // ✅ x1 as requested
+                description: "World Baseball Classic bracket totals (computed from Firestore via WBC2026ScoresStore).",
+                higherIsBetter: true,
+                archivesAtHomeOnFinalize: true, // set true only if this is a complete challenge tile
+                scoreProvider: {
+                    let store = WBC2026ScoresStore(bracketId: "wbc_2026")
+                    let provider = WBC2026ScoresProvider(store: store)
+                    return try await provider.fetchScoresByPlayer()
+                }
             )
+
         ]
     }
 

@@ -1,46 +1,71 @@
-//
-//  InPersonEventsView.swift
-//  Best Man Challenge
-//
-//  Created by Bret Clemetson on 1/2/26.
-//
-
-
 import SwiftUI
 
 struct InPersonEventsView: View {
 
-    private let events = [
-        "Backyard Games",
-        "Golf",
-        "Board Game/Video Games",
-        "Scavenger Hunt",
-        "Beach Day",
-        "Vegas Odds",
-        "Drinking Games"
-    ]
+    private let pokerNightEventId = "poker_night_001"
+
+    enum EventType: Hashable, Identifiable {
+        case vegasOdds
+        case pokerNight
+        case backyardChallenge
+        case golfSimulator
+        case drinkingGames
+        case weekendTrip
+        case boardVideoGames
+        case closingCeremonies
+
+        var id: String { title }
+
+        var title: String {
+            switch self {
+            case .vegasOdds: return "Vegas Odds"
+            case .pokerNight: return "Poker Night"
+            case .backyardChallenge: return "Backyard Challenge"
+            case .golfSimulator: return "Golf Simulator"
+            case .drinkingGames: return "Drinking Games"
+            case .weekendTrip: return "Weekend Trip"
+            case .boardVideoGames: return "Board/Video Games"
+            case .closingCeremonies: return "Closing Ceremonies"
+            }
+        }
+
+        static let all: [EventType] = [
+            .vegasOdds,
+            .pokerNight,
+            .backyardChallenge,
+            .golfSimulator,
+            .drinkingGames,
+            .weekendTrip,
+            .boardVideoGames,
+            .closingCeremonies
+        ]
+    }
 
     var body: some View {
-        ThemedScreen {
-            List(events, id: \.self) { event in
-                NavigationLink {
-                    ComingSoonView(title: event)
-                } label: {
-                    Text(event)
-                        .font(.headline)
-                        .padding(.vertical, 8)
+        NavigationStack {
+            ThemedScreen {
+                List {
+                    ForEach(EventType.all) { event in
+                        NavigationLink(value: event) {
+                            Text(event.title)
+                                .font(.headline)
+                                .padding(.vertical, 8)
+                        }
+                        .listRowBackground(Color.clear)
+                    }
                 }
-                .listRowBackground(Color.clear)
+                .listStyle(.plain)
+                .navigationTitle("In Person Events ✅ TEST")
+                .background(Color.background)
+                .navigationDestination(for: EventType.self) { event in
+                    switch event {
+                    case .pokerNight:
+                        PokerNightView(eventId: pokerNightEventId)
+                    default:
+                        ComingSoonView(title: event.title)
+                    }
+                }
             }
-            .listStyle(.plain)
-            .navigationTitle("In Person Events")
-            .background(Color.background)
         }
-    }
-}
-
-#Preview {
-    NavigationView {
-        InPersonEventsView()
     }
 }
