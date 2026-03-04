@@ -29,37 +29,79 @@ struct PreBetSlipView: View {
     @State private var errorTitle = "Bet Failed"
     @State private var errorMessage = "Something went wrong."
 
-    // MARK: - Odds Calculation
-    private func winnings(for bet: Int, with odds: String) -> Double {
-        let value = Double(
-            odds.replacingOccurrences(of: "+", with: "")
-                .replacingOccurrences(of: "-", with: "")
-        ) ?? 0
+    // MARK: - Odds helpers
 
-        if odds.contains("+") {
-            return (Double(bet) * value / 100).rounded()
+    private func parseAmerican(_ odds: String) -> Int? {
+        let s = odds.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        // supports "+200", "-120", "200"
+        return Int(s) ?? Int(s.replacingOccurrences(of: "+", with: ""))
+    }
+
+    /// Profit (not including stake) for a single straight bet.
+    private func straightProfit(stake: Double, americanOdds: Int) -> Double {
+        if americanOdds >= 0 {
+            return stake * (Double(americanOdds) / 100.0)
         } else {
-            return (Double(bet) / value * 100).rounded()
+            return stake * (100.0 / Double(-americanOdds))
         }
     }
 
-    private var totalToWin: Double {
-        let perPick = max(1, betAmount / max(1, playerDisplayNames.count))
-
-        // ✅ FIX: Use a named tuple parameter instead of mixing `_` and `$0`
-        return zip(playerDisplayNames, odds)
-            .map { pair in
-                let oddsString = pair.1
-                return winnings(for: perPick, with: oddsString)
-            }
-            .reduce(0, +)
+    private func decimalOdds(from americanOdds: Int) -> Double {
+        if americanOdds >= 0 {
+            return 1.0 + (Double(americanOdds) / 100.0)
+        } else {
+            return 1.0 + (100.0 / Double(-americanOdds))
+        }
     }
 
-    private var totalToCollect: Double {
-        Double(betAmount) + totalToWin
+    // MARK: - Stakes
+
+    private var picksCount: Int { max(1, odds.count) }
+
+    /// Straight bets: $300 total split across 3 picks => $100 each.
+    private var perPickStake: Double {
+        Double(betAmount) / Double(picksCount)
+    }
+
+    /// ✅ Parlay stake should be ONE pick cost ($100), not total wager.
+    private var parlayStake: Double {
+        perPickStake
+    }
+
+    // MARK: - Totals (Straight)
+
+    private var straightToWin: Double {
+        zip(playerDisplayNames, odds).reduce(0.0) { acc, pair in
+            guard let a = parseAmerican(pair.1) else { return acc }
+            return acc + straightProfit(stake: perPickStake, americanOdds: a)
+        }
+    }
+
+    private var straightToCollect: Double {
+        Double(betAmount) + straightToWin
+    }
+
+    // MARK: - Totals (Parlay using $100 stake)
+
+    private var parlayToWin: Double {
+        let decimals: [Double] = odds.compactMap { s in
+            guard let a = parseAmerican(s) else { return nil }
+            return decimalOdds(from: a)
+        }
+        guard decimals.count == odds.count, !decimals.isEmpty else { return 0 }
+
+        let parlayDecimal = decimals.reduce(1.0, *)
+        let profit = (parlayStake * parlayDecimal) - parlayStake
+        return max(0, profit).rounded()
+    }
+
+    private var totalCollectWithParlay: Double {
+        straightToCollect + parlayToWin
     }
 
     // MARK: - View
+
     var body: some View {
         VStack(spacing: 15) {
             Text("BEST MAN CHALLENGE SPORTSBOOK")
@@ -84,8 +126,11 @@ struct PreBetSlipView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("TOTAL WAGER:   $\(betAmount)")
-                Text("TO WIN:        $\(String(format: "%.2f", totalToWin))")
-                Text("TO COLLECT:    $\(String(format: "%.2f", totalToCollect))")
+                Text("TO WIN:        $\(String(format: "%.0f", straightToWin))")
+                Text("TO COLLECT:    $\(String(format: "%.0f", straightToCollect))")
+
+                Text("PARLAY WIN:   $\(String(format: "%.0f", parlayToWin))")
+                Text("TOTAL COLLECT:$\(String(format: "%.0f", totalCollectWithParlay))")
             }
             .font(.system(.body, design: .monospaced))
             .padding(.top, 5)
@@ -147,11 +192,9 @@ struct PreBetSlipView: View {
         ) { result in
             DispatchQueue.main.async {
                 isSubmitting = false
-
                 switch result {
                 case .success:
                     onConfirmed()
-
                 case .failure(let err):
                     let (title, msg) = friendlyError(err)
                     errorTitle = title
@@ -167,27 +210,23 @@ struct PreBetSlipView: View {
     private func friendlyError(_ error: Error) -> (String, String) {
         let ns = error as NSError
 
-        // Your own custom errors (recommended)
         if ns.domain == "BetService" {
             return ("Bet Not Placed", ns.localizedDescription)
         }
 
-        // Firestore permission issues
         if ns.domain.contains("FIRFirestoreErrorDomain") || ns.domain.contains("FIRFirestore") {
-            if ns.code == 7 { // permission denied
+            if ns.code == 7 {
                 return ("Permission Denied",
                         "Firestore blocked this action. This is usually a rules/auth issue. If you’re in dev, temporarily relax rules or ensure you’re signed in.")
             }
         }
 
-        // Network-ish hints
         let lower = ns.localizedDescription.lowercased()
         if lower.contains("network") || lower.contains("offline") || lower.contains("unavailable") {
             return ("Connection Problem",
                     "Couldn’t reach the server. Check your internet and try again.")
         }
 
-        // Fallback
         return ("Bet Failed", ns.localizedDescription)
     }
 }

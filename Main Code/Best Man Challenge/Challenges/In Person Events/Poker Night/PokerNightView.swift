@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import FirebaseFirestore
 
 struct PokerNightView: View {
     @StateObject private var store: PokerNightStore
@@ -120,6 +121,9 @@ struct PokerNightView: View {
 
             await store.markFinalized()
 
+            // ✅ Push final standings to Vegas Odds results using playerIds (linked_player_id)
+            try await pushVegasOddsFinalStandingsToFirestore()
+
             alertMessage = "Finalize complete (×2)."
             showAlert = true
 
@@ -129,6 +133,45 @@ struct PokerNightView: View {
         }
     }
 
+
+    private func pushVegasOddsFinalStandingsToFirestore() async throws {
+        guard let state = store.state else { return }
+        guard let winnerUid = state.winnerUid else {
+            throw NSError(domain: "PokerNight", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing winner."])
+        }
+
+        // Winner (#1) then #2..#N
+        let eliminatedSorted = state.eliminated.sorted { $0.place < $1.place }
+        let standingsUids: [String] = [winnerUid] + eliminatedSorted.map { $0.playerUid }
+
+        let db = Firestore.firestore()
+
+        // Map auth uid -> playerId via users/{uid}.linked_player_id
+        var standingsPlayerIds: [String] = []
+        standingsPlayerIds.reserveCapacity(standingsUids.count)
+
+        for uid in standingsUids {
+            let snap = try await db.collection("users").document(uid).getDocument()
+            let data = snap.data() ?? [:]
+            if let pid = (data["linked_player_id"] as? String) ?? (data["linkedPlayerId"] as? String) {
+                standingsPlayerIds.append(pid)
+            } else {
+                // Fallback: if mapping missing, write the raw value
+                standingsPlayerIds.append(uid)
+            }
+        }
+
+        let ref = db.collection("vegas_odds_events")
+            .document(challengeId)
+            .collection("results")
+            .document("final")
+
+        try await ref.setData([
+            "eventId": challengeId,
+            "standings": standingsPlayerIds,
+            "finalizedAt": FieldValue.serverTimestamp()
+        ], merge: true)
+    }
     private func list(state: PokerEventState) -> some View {
         let nameFor: (String) -> String = { uid in
             store.displayNameByUid[uid] ?? uid

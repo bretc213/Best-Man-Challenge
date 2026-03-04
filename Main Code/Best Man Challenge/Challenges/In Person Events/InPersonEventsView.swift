@@ -55,12 +55,18 @@ struct InPersonEventsView: View {
                     }
                 }
                 .listStyle(.plain)
-                .navigationTitle("In Person Events ✅ TEST")
+                .navigationTitle("In Person Events")
                 .background(Color.background)
                 .navigationDestination(for: EventType.self) { event in
                     switch event {
+
+                    case .vegasOdds:
+                        // ✅ New Vegas Odds flow entry point
+                        VegasOddsHomeView()
+
                     case .pokerNight:
                         PokerNightView(eventId: pokerNightEventId)
+
                     default:
                         ComingSoonView(title: event.title)
                     }
