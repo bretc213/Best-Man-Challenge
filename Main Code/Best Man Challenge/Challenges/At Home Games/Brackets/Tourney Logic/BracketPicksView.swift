@@ -5,7 +5,6 @@
 //  Created by Bret Clemetson on 1/31/26.
 //
 
-
 import SwiftUI
 import FirebaseFirestore
 
@@ -13,20 +12,14 @@ struct BracketPicksView: View {
     @EnvironmentObject var session: SessionStore
     let gameRefId: String
 
-    @State private var meta: TourneyGameMeta? = nil
-    @State private var teamsById: [String: TourneyTeam] = [:]
-    @State private var matchups: [TourneyMatchup] = []
-    @State private var picks: TourneyPicksDoc? = nil
+    @State private var meta: BMCBracketGameMeta? = nil
+    @State private var teamsById: [String: BMCBracketTeam] = [:]
+    @State private var matchups: [BMCBracketMatchup] = []
+    @State private var picks: BMCBracketPicksDoc? = nil
     @State private var errorMessage: String? = nil
     @State private var isSaving: Bool = false
 
     private let db = Firestore.firestore()
-
-    // feeder map: matchupId -> (homeFeederId, awayFeederId)
-    private struct Feeders {
-        var home: String? = nil
-        var away: String? = nil
-    }
 
     var body: some View {
         ScrollView {
@@ -49,27 +42,31 @@ struct BracketPicksView: View {
                     .padding(.top, 30)
                 } else {
                     let matchupsById = Dictionary(uniqueKeysWithValues: matchups.map { ($0.id, $0) })
-                    let feedersById = buildFeeders(matchups: matchups)
+                    let feedersById = BracketEngine.buildFeeders(matchups: matchups)
 
                     LazyVStack(spacing: 12) {
                         ForEach(matchups) { m in
-                            let home = slotDisplay(
+                            let selections = picks?.selections ?? [:]
+
+                            let home = BracketEngine.slotDisplay(
                                 matchup: m,
                                 slot: "home",
+                                picks: selections,
                                 matchupsById: matchupsById,
                                 feedersById: feedersById
                             )
 
-                            let away = slotDisplay(
+                            let away = BracketEngine.slotDisplay(
                                 matchup: m,
                                 slot: "away",
+                                picks: selections,
                                 matchupsById: matchupsById,
                                 feedersById: feedersById
                             )
 
                             let locked = isLockedNow
 
-                            BracketMatchupCard(
+                            BMCBracketMatchupCard(
                                 matchup: m,
                                 teamsById: teamsById,
                                 userPickTeamId: picks?.selections[m.id],
@@ -146,71 +143,6 @@ struct BracketPicksView: View {
         return f.string(from: date)
     }
 
-    // MARK: - Feeder graph
-
-    private func buildFeeders(matchups: [TourneyMatchup]) -> [String: Feeders] {
-        var feeders: [String: Feeders] = [:]
-
-        for m in matchups {
-            guard let nextId = m.nextMatchupId,
-                  let nextSlot = m.nextSlot else { continue }
-
-            var f = feeders[nextId] ?? Feeders()
-            if nextSlot == "home" {
-                f.home = m.id
-            } else if nextSlot == "away" {
-                f.away = m.id
-            }
-            feeders[nextId] = f
-        }
-
-        return feeders
-    }
-
-    private struct SlotResult {
-        let teamId: String?
-        let tint: BracketMatchupCard.Tint
-    }
-
-    private func slotDisplay(
-        matchup: TourneyMatchup,
-        slot: String, // "home" or "away"
-        matchupsById: [String: TourneyMatchup],
-        feedersById: [String: Feeders]
-    ) -> SlotResult {
-
-        let feeders = feedersById[matchup.id]
-        let feederId: String? = (slot == "home") ? feeders?.home : feeders?.away
-
-        if let feederId,
-           let feeder = matchupsById[feederId] {
-
-            let userPicked = picks?.selections[feederId]
-            let winner = feeder.winnerTeamId
-
-            if let winner {
-                if userPicked == winner {
-                    return SlotResult(teamId: winner, tint: .green)
-                } else {
-                    return SlotResult(teamId: winner, tint: .red)
-                }
-            }
-
-            if let userPicked {
-                return SlotResult(teamId: userPicked, tint: .none)
-            }
-
-            return SlotResult(teamId: nil, tint: .none)
-        }
-
-        // Round 1 fallback
-        if slot == "home" {
-            return SlotResult(teamId: matchup.homeTeamId, tint: .none)
-        } else {
-            return SlotResult(teamId: matchup.awayTeamId, tint: .none)
-        }
-    }
-
     // MARK: - Save pick
 
     private func setPick(matchupId: String, teamId: String?) async {
@@ -243,7 +175,7 @@ struct BracketPicksView: View {
             await MainActor.run {
                 var current = picks?.selections ?? [:]
                 current[matchupId] = teamId
-                self.picks = TourneyPicksDoc(
+                self.picks = BMCBracketPicksDoc(
                     id: playerId,
                     data: [
                         "isLocked": false,
@@ -259,7 +191,10 @@ struct BracketPicksView: View {
                 self.isSaving = false
             }
         }
+        
     }
+
+    // MARK: - Load
 
     // MARK: - Load
 
@@ -267,30 +202,47 @@ struct BracketPicksView: View {
         do {
             let metaSnap = try await db.collection("bracket_games").document(gameRefId).getDocument()
             if let d = metaSnap.data() {
-                self.meta = TourneyGameMeta(id: metaSnap.documentID, data: d)
+                self.meta = BMCBracketGameMeta(id: metaSnap.documentID, data: d)
             }
 
-            let teamsSnap = try await db.collection("bracket_games").document(gameRefId).collection("teams").getDocuments()
-            var tmap: [String: TourneyTeam] = [:]
+            // ✅ TEAMS
+            let teamsSnap = try await db.collection("bracket_games")
+                .document(gameRefId)
+                .collection("teams")
+                .getDocuments()
+
+            var tmap: [String: BMCBracketTeam] = [:]
             for doc in teamsSnap.documents {
-                if let t = TourneyTeam(id: doc.documentID, data: doc.data()) {
-                    tmap[t.id] = t
-                }
+                let t = BMCBracketTeam(id: doc.documentID, data: doc.data())
+
+                tmap[t.id] = t
             }
 
-            let matchSnap = try await db.collection("bracket_games").document(gameRefId).collection("matchups").getDocuments()
-            let ms = matchSnap.documents.compactMap { TourneyMatchup(id: $0.documentID, data: $0.data()) }
+            // ✅ MATCHUPS
+            let matchSnap = try await db.collection("bracket_games")
+                .document(gameRefId)
+                .collection("matchups")
+                .getDocuments()
+
+            let ms = matchSnap.documents
+                .compactMap { BMCBracketMatchup(id: $0.documentID, data: $0.data()) }
                 .sorted {
                     if $0.round != $1.round { return $0.round < $1.round }
                     return $0.gameNumber < $1.gameNumber
                 }
 
+            // ✅ PICKS
             let playerId = session.profile?.linkedPlayerId ?? ""
-            var loadedPicks: TourneyPicksDoc? = nil
+            var loadedPicks: BMCBracketPicksDoc? = nil
             if !playerId.isEmpty {
-                let pickDoc = try await db.collection("bracket_games").document(gameRefId).collection("picks").document(playerId).getDocument()
+                let pickDoc = try await db.collection("bracket_games")
+                    .document(gameRefId)
+                    .collection("picks")
+                    .document(playerId)
+                    .getDocument()
+
                 if let pd = pickDoc.data() {
-                    loadedPicks = TourneyPicksDoc(id: pickDoc.documentID, data: pd)
+                    loadedPicks = BMCBracketPicksDoc(id: pickDoc.documentID, data: pd)
                 }
             }
 

@@ -1,5 +1,5 @@
 //
-//  BracketMatchupCard.swift
+//  BMCBracketMatchupCard.swift
 //  Best Man Challenge
 //
 //  Created by Bret Clemetson on 1/31/26.
@@ -8,15 +8,15 @@
 
 import SwiftUI
 
-struct BracketMatchupCard: View {
+struct BMCBracketMatchupCard: View {
     enum Tint {
         case none
         case green
         case red
     }
 
-    let matchup: TourneyMatchup
-    let teamsById: [String: TourneyTeam]
+    let matchup: BMCBracketMatchup
+    let teamsById: [String: BMCBracketTeam]
 
     // Current selection for THIS matchup (user's pick)
     let userPickTeamId: String?
@@ -97,9 +97,21 @@ struct BracketMatchupCard: View {
             if canTap { onTap?() }
         } label: {
             HStack(spacing: 8) {
-                Circle()
-                    .fill(Color.white.opacity(0.12))
-                    .frame(width: 22, height: 22)
+                if let teamId,
+                   let team = teamsById[teamId],
+                   let logo = team.logoAsset,
+                   !logo.isEmpty {
+                    
+                    Image(logo)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 22, height: 22)
+                        .clipShape(Circle())
+                } else {
+                    Circle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 22, height: 22)
+                }
 
                 Text(teamName)
                     .font(.subheadline.weight(.semibold))

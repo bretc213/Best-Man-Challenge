@@ -60,7 +60,7 @@ struct BracketRootView: View {
                         BracketFuturesView(gameRefId: gameRefId)
 
                     case .standings:
-                        BracketStandingsView(gameRefId: gameRefId)
+                        BMCBracketStandingsView(gameRefId: gameRefId)
 
                     case .admin:
                         BracketAdminResultsView(gameRefId: gameRefId)

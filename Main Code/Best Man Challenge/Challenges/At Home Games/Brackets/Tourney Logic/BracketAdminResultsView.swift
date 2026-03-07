@@ -5,7 +5,6 @@
 //  Created by Bret Clemetson on 1/31/26.
 //
 
-
 import SwiftUI
 import FirebaseFirestore
 
@@ -13,11 +12,13 @@ struct BracketAdminResultsView: View {
     @EnvironmentObject var session: SessionStore
     let gameRefId: String
 
-    @State private var matchups: [TourneyMatchup] = []
-    @State private var teamsById: [String: TourneyTeam] = [:]
+    @State private var matchups: [BMCBracketMatchup] = []
+    @State private var teamsById: [String: BMCBracketTeam] = [:]
     @State private var errorMessage: String? = nil
+    @State private var isRecomputing: Bool = false
 
     private let db = Firestore.firestore()
+    private let standingsService = BMCBracketStandingsService()
 
     var body: some View {
         ThemedScreen {
@@ -28,45 +29,66 @@ struct BracketAdminResultsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                ForEach(matchups) { m in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Round \(m.round) • Game \(m.gameNumber)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        HStack {
-                            Text(teamName(m.homeTeamId) ?? "TBD")
-                            Spacer()
-                            Text("vs").foregroundStyle(.secondary)
-                            Spacer()
-                            Text(teamName(m.awayTeamId) ?? "TBD")
+                if isOwner {
+                    Section {
+                        Button {
+                            Task { await recomputeStandings() }
+                        } label: {
+                            HStack {
+                                Text(isRecomputing ? "Recomputing..." : "Recompute Standings")
+                                Spacer()
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                            }
                         }
-                        .font(.headline)
+                        .disabled(isRecomputing)
+                    } header: {
+                        Text("Admin Tools")
+                    }
+                }
 
-                        if isOwner,
-                           let home = m.homeTeamId,
-                           let away = m.awayTeamId {
+                Section {
+                    ForEach(matchups) { m in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Round \(m.round) • Game \(m.gameNumber)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
 
                             HStack {
-                                Button("Set Home Winner") {
-                                    Task { await setWinner(matchupId: m.id, winnerTeamId: home) }
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button("Set Away Winner") {
-                                    Task { await setWinner(matchupId: m.id, winnerTeamId: away) }
-                                }
-                                .buttonStyle(.borderedProminent)
+                                Text(teamName(m.homeTeamId) ?? "TBD")
+                                Spacer()
+                                Text("vs").foregroundStyle(.secondary)
+                                Spacer()
+                                Text(teamName(m.awayTeamId) ?? "TBD")
                             }
+                            .font(.headline)
 
-                            if let winner = m.winnerTeamId {
-                                Text("Winner: \(teamName(winner) ?? winner)")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                            if isOwner,
+                               let home = m.homeTeamId,
+                               let away = m.awayTeamId {
+
+                                HStack {
+                                    Button("Set Home Winner") {
+                                        Task { await setWinner(matchupId: m.id, winnerTeamId: home) }
+                                    }
+                                    .buttonStyle(.bordered)
+
+                                    Button("Set Away Winner") {
+                                        Task { await setWinner(matchupId: m.id, winnerTeamId: away) }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                }
+
+                                if let winner = m.winnerTeamId {
+                                    Text("Winner: \(teamName(winner) ?? winner)")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
+                        .padding(.vertical, 8)
                     }
-                    .padding(.vertical, 8)
+                } header: {
+                    Text("Matchups")
                 }
             }
             .listStyle(.plain)
@@ -92,11 +114,11 @@ struct BracketAdminResultsView: View {
                 .collection("teams")
                 .getDocuments()
 
-            var map: [String: TourneyTeam] = [:]
+            var map: [String: BMCBracketTeam] = [:]
             for doc in teamsSnap.documents {
-                if let t = TourneyTeam(id: doc.documentID, data: doc.data()) {
-                    map[t.id] = t
-                }
+                // BMCBracketTeam initializer is non-failable; no conditional binding.
+                let t = BMCBracketTeam(id: doc.documentID, data: doc.data())
+                map[t.id] = t
             }
 
             let matchSnap = try await db.collection("bracket_games")
@@ -105,7 +127,7 @@ struct BracketAdminResultsView: View {
                 .getDocuments()
 
             let ms = matchSnap.documents
-                .compactMap { TourneyMatchup(id: $0.documentID, data: $0.data()) }
+                .compactMap { BMCBracketMatchup(id: $0.documentID, data: $0.data()) }
                 .sorted {
                     if $0.round != $1.round { return $0.round < $1.round }
                     return $0.gameNumber < $1.gameNumber
@@ -138,6 +160,23 @@ struct BracketAdminResultsView: View {
         } catch {
             await MainActor.run {
                 self.errorMessage = "Failed to set winner: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func recomputeStandings() async {
+        guard isOwner else { return }
+        isRecomputing = true
+        errorMessage = nil
+        do {
+            try await standingsService.recomputeStandings(gameRefId: gameRefId)
+            await MainActor.run {
+                self.isRecomputing = false
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Failed to recompute standings: \(error.localizedDescription)"
+                self.isRecomputing = false
             }
         }
     }
