@@ -132,6 +132,10 @@ struct AtHomeGamesView: View {
         }
     }
 
+    private var mlbFuturesUserId: String {
+        session.profile?.linkedPlayerId ?? ""
+    }
+
     private var isAdmin: Bool {
         let role = session.profile?.role ?? ""
         return role == "owner" || role == "commish"
@@ -154,22 +158,28 @@ struct AtHomeGamesView: View {
 
     @ViewBuilder
     private func destinationView(for game: AtHomeGame) -> some View {
-        // ✅ Generic bracket routing (Firebase-driven)
+        // Generic bracket routing (Firebase-driven)
         if game.gameType == "bracket",
            let ref = game.gameRefId,
            !ref.isEmpty {
             BracketRootView(gameRefId: ref)
         } else {
-            // Legacy / non-bracket routes
             switch game.route {
             case "cfb_bracket":
                 CFBBracketView()
 
             case "nfl_playoffs":
                 NFLPlayoffsRootView()
-            
+
             case "wbc_2026":
                 WBC2026RootView()
+
+            case "mlb_futures":
+                MLBFuturesRootView(
+                    userId: mlbFuturesUserId,
+                    displayName: session.profile?.displayName ?? "Player",
+                    isAdmin: isAdmin
+                )
 
             default:
                 ComingSoonChallengeView(
@@ -182,7 +192,6 @@ struct AtHomeGamesView: View {
     }
 }
 
-// ✅ Preview belongs OUTSIDE the struct
 #Preview {
     NavigationView {
         AtHomeGamesView()

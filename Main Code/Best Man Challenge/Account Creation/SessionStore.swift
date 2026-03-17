@@ -25,6 +25,7 @@ struct UserProfile: Codable {
     }
 }
 
+
 @MainActor
 final class SessionStore: ObservableObject {
     @Published var firebaseUser: User?
