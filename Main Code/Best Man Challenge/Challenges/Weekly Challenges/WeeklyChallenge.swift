@@ -40,38 +40,50 @@ struct WeeklyQuizQuestion: Codable, Identifiable {
     let correct_index: Int?
 }
 
+struct WeeklyImageQuizQuestion: Codable, Identifiable {
+    let id: String
+    let prompt: String
+    let image_name: String
+    let answer: String?
+    let acceptable_answers: [String]?
+    let allow_fuzzy_match: Bool?
+    let fuzzy_distance: Int?
+}
+
 struct WeeklyChallengeQuiz: Codable {
     let points_per_correct: Int?
     let questions: [WeeklyQuizQuestion]?
+    let image_questions: [WeeklyImageQuizQuestion]?
 }
 
 // MARK: - Main model
 
 struct WeeklyChallenge: Identifiable, Codable {
     var id: String
-    
+
     let week: Int
     let title: String
     let description: String
     let type: ChallengeType
-    
+
     let startDate: Date?
     let endDate: Date?
     let locksAt: Date?
-    
+
     let answer: String?
-    
+    let rules: [String]?
+
     let puzzle: WeeklyChallengePuzzle?
     let cipher: WeeklyChallengeCipher?
     let quiz: WeeklyChallengeQuiz?
-    
+
     // ✅ Wordle extras (optional)
     let wordle: WeeklyChallengeWordle?
     let game_format: String?
-    
+
     // Optional Firestore flag
     let is_active: Bool?
-    
+
     // ✅ Explicit initializer with defaults (so older call sites keep compiling)
     init(
         id: String,
@@ -83,6 +95,7 @@ struct WeeklyChallenge: Identifiable, Codable {
         endDate: Date? = nil,
         locksAt: Date? = nil,
         answer: String? = nil,
+        rules: [String]? = nil,
         puzzle: WeeklyChallengePuzzle? = nil,
         cipher: WeeklyChallengeCipher? = nil,
         quiz: WeeklyChallengeQuiz? = nil,
@@ -99,6 +112,7 @@ struct WeeklyChallenge: Identifiable, Codable {
         self.endDate = endDate
         self.locksAt = locksAt
         self.answer = answer
+        self.rules = rules
         self.puzzle = puzzle
         self.cipher = cipher
         self.quiz = quiz
@@ -106,55 +120,67 @@ struct WeeklyChallenge: Identifiable, Codable {
         self.game_format = game_format
         self.is_active = is_active
     }
-    
+
     // MARK: - Derived
-    
+
     var isActive: Bool {
         if let is_active { return is_active }
-        
+
         if let startDate, let endDate {
             let now = Date()
             return now >= startDate && now < endDate
         }
         return true
     }
-    
+
     var isExpired: Bool {
         if let endDate {
             return Date() >= endDate
         }
         return false
     }
-    
+
     var isLocked: Bool {
         guard let locksAt else { return false }
         return Date() >= locksAt
     }
-    
+
+    var isImageQuiz: Bool {
+        type == .image_quiz
+    }
+
+    var imageQuizQuestions: [WeeklyImageQuizQuestion] {
+        quiz?.image_questions ?? []
+    }
+
+    var imageQuizPointsPerCorrect: Int {
+        quiz?.points_per_correct ?? 1
+    }
+
     // MARK: - Wordle helpers
-    
+
     var isWordle: Bool {
         if let game_format, game_format.lowercased() == "wordle" { return true }
         return wordle != nil || type == .wordle
     }
-    
+
     var wordleWordLength: Int {
         wordle?.word_length ?? 5
     }
-    
+
     var wordleMaxAttempts: Int {
         wordle?.max_attempts ?? 6
     }
-    
+
     // ✅ FIXED: prefer nested answer only if non-empty, else fall back to top-level answer
     var wordleAnswer: String? {
         let nested = (wordle?.answer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !nested.isEmpty { return nested }
-        
+
         let top = (answer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return top.isEmpty ? nil : top
     }
-    
+
     var isWordleReady: Bool {
         guard isWordle else { return false }
         let ans = (wordleAnswer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

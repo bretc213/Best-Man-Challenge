@@ -6,6 +6,7 @@ struct WeeklyChallengeView: View {
     @EnvironmentObject var session: SessionStore
 
     @State private var showQuiz = false
+    @State private var showImageQuiz = false
     @State private var showPropBets = false
     @State private var showWordle = false
 
@@ -21,6 +22,11 @@ struct WeeklyChallengeView: View {
     private func quizButtonTitle(for challenge: WeeklyChallenge) -> String {
         if isLocked(challenge) { return "View Quiz (Locked)" }
         return challengeManager.lastSubmission == nil ? "Start Quiz" : "Quiz Completed"
+    }
+
+    private func imageQuizButtonTitle(for challenge: WeeklyChallenge) -> String {
+        if isLocked(challenge) { return "View Image Quiz (Locked)" }
+        return challengeManager.lastSubmission == nil ? "Start Image Quiz" : "Image Quiz Completed"
     }
 
     private func propBetsButtonTitle(for challenge: WeeklyChallenge) -> String {
@@ -50,7 +56,6 @@ struct WeeklyChallengeView: View {
             .onAppear {
                 syncUserContextIntoManager()
             }
-            // ✅ IMPORTANT: profile loads async, so re-sync when it arrives/changes
             .onChange(of: session.profile?.displayName) { _, _ in
                 syncUserContextIntoManager()
             }
@@ -73,6 +78,14 @@ struct WeeklyChallengeView: View {
                     WeeklyQuizPlayView(challenge: challenge, manager: challengeManager)
                 } else {
                     Text("No active challenge.").navigationTitle("Quiz")
+                }
+            }
+            .navigationDestination(isPresented: $showImageQuiz) {
+                if let challenge = challengeManager.currentChallenge {
+                    WeeklyImageQuizPlayView(challenge: challenge, manager: challengeManager)
+                        .environmentObject(session)
+                } else {
+                    Text("No active challenge.").navigationTitle("Image Quiz")
                 }
             }
             .navigationDestination(isPresented: $showPropBets) {
@@ -100,7 +113,6 @@ struct WeeklyChallengeView: View {
             }
     }
 
-    // --- the rest of your file stays the same ---
     @ViewBuilder
     private var content: some View {
         switch challengeManager.state {
@@ -162,6 +174,17 @@ struct WeeklyChallengeView: View {
                         .font(.footnote)
                 }
 
+                if challenge.isImageQuiz {
+                    Button { showImageQuiz = true } label: {
+                        Text(imageQuizButtonTitle(for: challenge)).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Text(locked ? "Answers are locked." : "Type each Pixar character name from the image.")
+                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                }
+
                 if challenge.type == .prop_bets {
                     Button { showPropBets = true } label: {
                         Text(propBetsButtonTitle(for: challenge)).frame(maxWidth: .infinity)
@@ -212,11 +235,6 @@ struct WeeklyChallengeView: View {
             .padding()
         }
     }
-
-
-
-
-    // MARK: - Cards
 
     private func headerCard(_ challenge: WeeklyChallenge) -> some View {
         VStack(alignment: .leading, spacing: 10) {

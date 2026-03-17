@@ -21,7 +21,7 @@ final class WeeklyChallengeManager: ObservableObject {
     @Published var currentChallenge: WeeklyChallenge?
     @Published var state: LoadState = .idle
 
-    // Quiz / Riddle / Wordle submission (LIVE)
+    // Quiz / Riddle / Wordle / Image Quiz submission (LIVE)
     @Published var lastSubmission: WeeklyChallengeSubmission?
 
     // Prop bets submission summary (LIVE)
@@ -70,7 +70,6 @@ final class WeeklyChallengeManager: ObservableObject {
 
     // MARK: - User Context
 
-    /// ✅ Use linked_player_id if present, otherwise fall back to uid (NOT admin_ prefix)
     private func computeSubmitterId(uid: String, linkedPlayerId: String?) -> String {
         let lp = (linkedPlayerId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !lp.isEmpty { return lp }
@@ -79,14 +78,12 @@ final class WeeklyChallengeManager: ObservableObject {
         return u.isEmpty ? "" : u
     }
 
-    /// Always returns the best submitter id we can, even if setUserContext wasn’t called yet.
     private func resolvedSubmitterId() -> String? {
         if let sid = submitterId, !sid.isEmpty { return sid }
         guard let uid = Auth.auth().currentUser?.uid, !uid.isEmpty else { return nil }
         return computeSubmitterId(uid: uid, linkedPlayerId: linkedPlayerId)
     }
 
-    /// ✅ Canonical display name chooser (SessionStore name > Auth displayName > uid)
     private func bestDisplayName(uid: String) -> String {
         let authName = Auth.auth().currentUser?.displayName
 
@@ -105,7 +102,6 @@ final class WeeklyChallengeManager: ObservableObject {
         return cleanedSubmitter ?? cleanedProfile ?? cleanedAuth ?? uid
     }
 
-    /// Call this once you have a logged-in session (e.g., onAppear).
     func setUserContext(uid: String?, linkedPlayerId: String?, displayName: String?) {
         let dn = (displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let uidClean = (uid ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -128,7 +124,6 @@ final class WeeklyChallengeManager: ObservableObject {
         let sid = computeSubmitterId(uid: uidClean, linkedPlayerId: self.linkedPlayerId)
         self.submitterId = sid
 
-        // Prefer SessionStore displayName; fall back to Auth displayName; then sid
         let authName = Auth.auth().currentUser?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let dn = self.displayName, !dn.isEmpty {
             self.submitterDisplayName = dn
@@ -140,8 +135,6 @@ final class WeeklyChallengeManager: ObservableObject {
 
         if let challenge = currentChallenge {
             updateSubmissionListeners(for: challenge)
-
-            // ✅ If you previously wrote uid/Unknown into the submission doc, patch it once
             Task { @MainActor in
                 await self.backfillSubmissionDisplayNameIfNeeded(challengeId: challenge.id)
             }
@@ -215,8 +208,6 @@ final class WeeklyChallengeManager: ObservableObject {
                     self.currentChallenge = challenge
                     self.state = .loaded
                     self.updateSubmissionListeners(for: challenge)
-
-                    // ✅ If we already have a submission and the profile name is now known, patch it once
                     await self.backfillSubmissionDisplayNameIfNeeded(challengeId: challenge.id)
                 }
             }
@@ -225,13 +216,11 @@ final class WeeklyChallengeManager: ObservableObject {
     // MARK: - Submission listeners routing
 
     private func updateSubmissionListeners(for challenge: WeeklyChallenge) {
-        // reset
         self.lastSubmission = nil
         self.propBetsPickSummary = nil
         stopPropBetsPickListener()
         stopSubmissionListener()
 
-        // Prop bets uses picks/{uid}
         if challenge.type == .prop_bets {
             if let uid = self.authUid, !uid.isEmpty {
                 startPropBetsPickListener(challengeId: challenge.id, uid: uid)
@@ -239,7 +228,6 @@ final class WeeklyChallengeManager: ObservableObject {
             return
         }
 
-        // Everything else uses submissions/{submitterId}
         guard let sid = resolvedSubmitterId(), !sid.isEmpty else {
             self.lastSubmission = nil
             return
@@ -287,7 +275,7 @@ final class WeeklyChallengeManager: ObservableObject {
         }
     }
 
-    // MARK: - LIVE submission listener (Quiz / Riddle / Wordle)
+    // MARK: - LIVE submission listener
 
     private func stopSubmissionListener() {
         submissionListener?.remove()
@@ -322,10 +310,7 @@ final class WeeklyChallengeManager: ObservableObject {
         }
     }
 
-    // MARK: - Backfill display name (fix old submissions that wrote uid/Unknown)
-
     private func backfillSubmissionDisplayNameIfNeeded(challengeId: String) async {
-        // Only for submissions/{submitterId} challenges (not prop bets)
         guard currentChallenge?.type != .prop_bets else { return }
         guard let uid = Auth.auth().currentUser?.uid, !uid.isEmpty else { return }
         guard let sid = resolvedSubmitterId(), !sid.isEmpty else { return }
@@ -346,7 +331,6 @@ final class WeeklyChallengeManager: ObservableObject {
             let existing = (data["display_name"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // Patch only if missing/unknown/equals uid
             if existing == nil || existing?.isEmpty == true || existing?.lowercased() == "unknown" || existing == uid {
                 try await ref.setData(["display_name": desired], merge: true)
             }
@@ -389,9 +373,9 @@ final class WeeklyChallengeManager: ObservableObject {
         let locksAt   = (data["locksAt"] as? Timestamp)?.dateValue()
 
         let answer = stringValue(data["answer"])
+        let rules = data["rules"] as? [String]
         let isActiveFlag = boolValue(data["is_active"])
 
-        // Wordle extras (optional)
         let gameFormat = stringValue(data["game_format"])
         var wordle: WeeklyChallengeWordle? = nil
         if let w = data["wordle"] as? [String: Any] {
@@ -402,7 +386,6 @@ final class WeeklyChallengeManager: ObservableObject {
             )
         }
 
-        // Puzzle (optional)
         var puzzle: WeeklyChallengePuzzle? = nil
         if let p = data["puzzle"] as? [String: Any] {
             puzzle = WeeklyChallengePuzzle(
@@ -415,7 +398,6 @@ final class WeeklyChallengeManager: ObservableObject {
             )
         }
 
-        // Cipher (optional)
         var cipher: WeeklyChallengeCipher? = nil
         if let c = data["cipher"] as? [String: Any] {
             cipher = WeeklyChallengeCipher(
@@ -426,34 +408,48 @@ final class WeeklyChallengeManager: ObservableObject {
             )
         }
 
-        // Quiz (optional)
         var quiz: WeeklyChallengeQuiz? = nil
         if let q = data["quiz"] as? [String: Any] {
             let pointsPerCorrect = intValue(q["points_per_correct"])
             var questions: [WeeklyQuizQuestion] = []
+            var imageQuestions: [WeeklyImageQuizQuestion] = []
 
             if let rawQs = q["questions"] as? [[String: Any]] {
                 for rq in rawQs {
                     guard
                         let id = stringValue(rq["id"]),
-                        let prompt = stringValue(rq["prompt"]),
-                        let options = rq["options"] as? [String]
+                        let prompt = stringValue(rq["prompt"])
                     else { continue }
 
-                    questions.append(
-                        WeeklyQuizQuestion(
-                            id: id,
-                            prompt: prompt,
-                            options: options,
-                            correct_index: intValue(rq["correct_index"])
+                    if let imageName = stringValue(rq["image_name"]) {
+                        imageQuestions.append(
+                            WeeklyImageQuizQuestion(
+                                id: id,
+                                prompt: prompt,
+                                image_name: imageName,
+                                answer: stringValue(rq["answer"]),
+                                acceptable_answers: rq["acceptable_answers"] as? [String],
+                                allow_fuzzy_match: boolValue(rq["allow_fuzzy_match"]),
+                                fuzzy_distance: intValue(rq["fuzzy_distance"])
+                            )
                         )
-                    )
+                    } else if let options = rq["options"] as? [String] {
+                        questions.append(
+                            WeeklyQuizQuestion(
+                                id: id,
+                                prompt: prompt,
+                                options: options,
+                                correct_index: intValue(rq["correct_index"])
+                            )
+                        )
+                    }
                 }
             }
 
             quiz = WeeklyChallengeQuiz(
                 points_per_correct: pointsPerCorrect,
-                questions: questions.isEmpty ? nil : questions
+                questions: questions.isEmpty ? nil : questions,
+                image_questions: imageQuestions.isEmpty ? nil : imageQuestions
             )
         }
 
@@ -467,6 +463,7 @@ final class WeeklyChallengeManager: ObservableObject {
             endDate: endDate,
             locksAt: locksAt,
             answer: answer,
+            rules: rules,
             puzzle: puzzle,
             cipher: cipher,
             quiz: quiz,
@@ -486,6 +483,53 @@ final class WeeklyChallengeManager: ObservableObject {
         return nil
     }
 
+    private func parseStringMap(_ any: Any?) -> [String: String]? {
+        if let map = any as? [String: String] {
+            return map
+        }
+        if let raw = any as? [String: Any] {
+            var parsed: [String: String] = [:]
+            for (k, v) in raw {
+                if let s = v as? String {
+                    parsed[k] = s
+                }
+            }
+            return parsed.isEmpty ? nil : parsed
+        }
+        return nil
+    }
+
+    private func parseIntMap(_ any: Any?) -> [String: Int]? {
+        if let map = any as? [String: Int] {
+            return map
+        }
+        if let raw = any as? [String: Any] {
+            var parsed: [String: Int] = [:]
+            for (k, v) in raw {
+                if let i = v as? Int { parsed[k] = i }
+                else if let d = v as? Double { parsed[k] = Int(d) }
+                else if let s = v as? String, let i = Int(s) { parsed[k] = i }
+            }
+            return parsed.isEmpty ? nil : parsed
+        }
+        return nil
+    }
+
+    private func parseBoolMap(_ any: Any?) -> [String: Bool]? {
+        if let map = any as? [String: Bool] {
+            return map
+        }
+        if let raw = any as? [String: Any] {
+            var parsed: [String: Bool] = [:]
+            for (k, v) in raw {
+                if let b = v as? Bool { parsed[k] = b }
+                else if let n = v as? NSNumber { parsed[k] = n.boolValue }
+            }
+            return parsed.isEmpty ? nil : parsed
+        }
+        return nil
+    }
+
     private func parseSubmissionDoc(submitterId: String, data: [String: Any]) -> WeeklyChallengeSubmission {
         let submittedAt =
             (data["submittedAt"] as? Timestamp)?.dateValue()
@@ -496,19 +540,17 @@ final class WeeklyChallengeManager: ObservableObject {
         let lp = data["linked_player_id"] as? String
         let dn = data["display_name"] as? String
 
-        // Wordle fields
         let wordleAttempts = intValue(data["wordle_attempts"])
         let wordleSolved = data["wordle_solved"] as? Bool
         let wordleGuesses = data["wordle_guesses"] as? [String]
 
-        // Score-based (Quiz OR Wordle result)
         let score = intValue(data["score"])
         let maxScore = intValue(data["maxScore"]) ?? intValue(data["max_score"])
 
-        // Quiz answers (optional)
-        let answers = data["answers"] as? [String: Int]
+        let answers = parseIntMap(data["answers"])
+        let textAnswers = parseStringMap(data["answers_text"]) ?? parseStringMap(data["answers"])
+        let breakdown = parseBoolMap(data["breakdown"])
 
-        // Riddle fields
         let answerText = data["answerText"] as? String
         let isCorrect = data["isCorrect"] as? Bool
 
@@ -520,8 +562,10 @@ final class WeeklyChallengeManager: ObservableObject {
             answerText: answerText,
             isCorrect: isCorrect,
             answers: answers,
+            textAnswers: textAnswers,
             score: score,
             maxScore: maxScore,
+            breakdown: breakdown,
             wordleAttempts: wordleAttempts,
             wordleSolved: wordleSolved,
             wordleGuesses: wordleGuesses,
@@ -529,7 +573,7 @@ final class WeeklyChallengeManager: ObservableObject {
         )
     }
 
-    // MARK: - Submitters (Riddle / Quiz)
+    // MARK: - Submitters
 
     func submitRiddleAnswer(_ text: String, isCorrect: Bool) async throws {
         guard let challengeId = currentChallenge?.id else {
@@ -602,6 +646,92 @@ final class WeeklyChallengeManager: ObservableObject {
             .setData(payload, merge: true)
     }
 
+    func submitImageQuiz(
+        answers: [String: String],
+        score: Int,
+        maxScore: Int,
+        breakdown: [String: Bool]
+    ) async throws {
+        guard let challengeId = currentChallenge?.id else {
+            throw NSError(domain: "WeeklyChallenge", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "No active challenge."])
+        }
+        guard let uid = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "WeeklyChallenge", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "You must be logged in to submit."])
+        }
+        guard let sid = resolvedSubmitterId() else {
+            throw NSError(domain: "WeeklyChallenge", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
+        }
+
+        let bestName = bestDisplayName(uid: uid)
+        let trimmedAnswers = answers.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        let payload: [String: Any] = [
+            "uid": uid,
+            "linked_player_id": self.linkedPlayerId as Any,
+            "display_name": bestName,
+            "answers_text": trimmedAnswers,
+            "score": score,
+            "maxScore": maxScore,
+            "breakdown": breakdown,
+            "submittedAt": Timestamp(date: Date()),
+            "updated_at": FieldValue.serverTimestamp()
+        ]
+
+        try await db.collection("weekly_challenges")
+            .document(challengeId)
+            .collection("submissions")
+            .document(sid)
+            .setData(payload, merge: true)
+    }
+
+    func saveImageQuizDraft(challengeId: String, answers: [String: String]) async throws {
+        guard let uid = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "WeeklyChallenge", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "You must be logged in."])
+        }
+        guard let sid = resolvedSubmitterId() else {
+            throw NSError(domain: "WeeklyChallenge", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
+        }
+
+        if self.lastSubmission != nil { return }
+
+        let bestName = bestDisplayName(uid: uid)
+
+        try await db.collection("weekly_challenges")
+            .document(challengeId)
+            .collection("submissions")
+            .document(sid)
+            .setData([
+                "uid": uid,
+                "linked_player_id": self.linkedPlayerId as Any,
+                "display_name": bestName,
+                "image_quiz_draft_answers": answers,
+                "image_quiz_draft_updated_at": Timestamp(date: Date())
+            ], merge: true)
+    }
+
+    func loadImageQuizDraft(challengeId: String) async -> [String: String]? {
+        guard let sid = resolvedSubmitterId() else { return nil }
+
+        do {
+            let snap = try await db.collection("weekly_challenges")
+                .document(challengeId)
+                .collection("submissions")
+                .document(sid)
+                .getDocument()
+
+            guard snap.exists, let data = snap.data() else { return nil }
+            return parseStringMap(data["image_quiz_draft_answers"])
+        } catch {
+            print("⚠️ loadImageQuizDraft failed:", error.localizedDescription)
+            return nil
+        }
+    }
+
     // MARK: - Wordle: finish submit (points + completion)
 
     func submitWordleResult(
@@ -622,8 +752,6 @@ final class WeeklyChallengeManager: ObservableObject {
         }
 
         let bestName = bestDisplayName(uid: uid)
-
-        // Scoring: solved in 1 => maxAttempts, solved in maxAttempts => 1, fail => 0
         let points = solved ? max(1, (maxAttempts + 6) - attemptsUsed) : 0
         let now = Date()
 
@@ -647,7 +775,6 @@ final class WeeklyChallengeManager: ObservableObject {
             .document(sid)
             .setData(payload, merge: true)
 
-        // Keep UI snappy; listener will also update
         self.lastSubmission = WeeklyChallengeSubmission(
             id: sid,
             uid: uid,
@@ -656,16 +783,16 @@ final class WeeklyChallengeManager: ObservableObject {
             answerText: nil,
             isCorrect: nil,
             answers: nil,
+            textAnswers: nil,
             score: points,
             maxScore: maxAttempts,
+            breakdown: nil,
             wordleAttempts: attemptsUsed,
             wordleSolved: solved,
             wordleGuesses: guesses,
             submittedAt: now
         )
     }
-
-    // MARK: - Wordle Progress (persist after ENTER, restore on reopen)
 
     func saveWordleProgress(challengeId: String, guesses: [String]) async throws {
         guard let uid = Auth.auth().currentUser?.uid else {
@@ -677,7 +804,6 @@ final class WeeklyChallengeManager: ObservableObject {
                           userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
         }
 
-        // Don’t overwrite finished result
         if let sub = self.lastSubmission, sub.isWordleFinished { return }
 
         let bestName = bestDisplayName(uid: uid)
@@ -709,7 +835,6 @@ final class WeeklyChallengeManager: ObservableObject {
 
             guard snap.exists, let data = snap.data() else { return [] }
 
-            // If finished, return final guesses
             if let finished = data["wordle_guesses"] as? [String], !finished.isEmpty {
                 return finished
             }
@@ -735,10 +860,11 @@ struct WeeklyChallengeSubmission: Identifiable {
     let isCorrect: Bool?
 
     let answers: [String: Int]?
+    let textAnswers: [String: String]?
     let score: Int?
     let maxScore: Int?
+    let breakdown: [String: Bool]?
 
-    // Wordle (optional)
     let wordleAttempts: Int?
     let wordleSolved: Bool?
     let wordleGuesses: [String]?
@@ -759,8 +885,10 @@ struct WeeklyChallengeSubmission: Identifiable {
         answerText: String? = nil,
         isCorrect: Bool? = nil,
         answers: [String: Int]? = nil,
+        textAnswers: [String: String]? = nil,
         score: Int? = nil,
         maxScore: Int? = nil,
+        breakdown: [String: Bool]? = nil,
         wordleAttempts: Int? = nil,
         wordleSolved: Bool? = nil,
         wordleGuesses: [String]? = nil,
@@ -773,8 +901,10 @@ struct WeeklyChallengeSubmission: Identifiable {
         self.answerText = answerText
         self.isCorrect = isCorrect
         self.answers = answers
+        self.textAnswers = textAnswers
         self.score = score
         self.maxScore = maxScore
+        self.breakdown = breakdown
         self.wordleAttempts = wordleAttempts
         self.wordleSolved = wordleSolved
         self.wordleGuesses = wordleGuesses

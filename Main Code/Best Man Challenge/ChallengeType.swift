@@ -12,8 +12,9 @@ enum ChallengeType: String, Codable, CaseIterable {
     case minesweeper
     case creative
     case quiz
+    case image_quiz
     case prop_bets
-    case wordle   // ✅ NEW
+    case wordle
 
     /// Fallback-safe decoding so unknown future types
     /// don’t crash the whole challenge load.
@@ -24,7 +25,6 @@ enum ChallengeType: String, Codable, CaseIterable {
         if let value = ChallengeType(rawValue: rawValue) {
             self = value
         } else {
-            // ⚠️ Fallback to riddle instead of crashing
             print("⚠️ Unknown ChallengeType '\(rawValue)' — defaulting to .riddle")
             self = .riddle
         }
