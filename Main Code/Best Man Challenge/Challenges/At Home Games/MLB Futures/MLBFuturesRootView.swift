@@ -42,7 +42,8 @@ struct MLBFuturesRootView: View {
                         MLBFuturesSubmissionView(
                             store: store,
                             userId: userId,
-                            displayName: displayName
+                            displayName: displayName,
+                            board: .publicBoard
                         )
 
                     case .allPicks:

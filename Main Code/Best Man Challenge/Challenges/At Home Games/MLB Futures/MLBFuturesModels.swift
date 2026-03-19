@@ -7,6 +7,11 @@ enum MLBFuturesConstants {
     static let title = "MLB Futures Picks"
     static let subtitle = "Predict division finishes, playoff seeds, and the full postseason path."
     static let assetImage = "MLBFuturesLogo"
+    static let pointsFinalizerId = challengeId
+    static let pointsMultiplier: Double = 1
+
+    static let publicPicksCollection = "picks"
+    static let adminPicksCollection = "admin_picks"
 
     static let worldSeriesWinnerPoints = 20
 
@@ -75,6 +80,55 @@ enum MLBFuturesConstants {
 
     static func teams(in league: MLBLeague) -> [MLBTeam] {
         allTeams.filter { $0.league == league }
+    }
+}
+
+enum MLBFuturesPickBoard: String, Codable {
+    case publicBoard = "public"
+    case adminBoard = "admin"
+
+    var picksCollectionName: String {
+        switch self {
+        case .publicBoard: return MLBFuturesConstants.publicPicksCollection
+        case .adminBoard: return MLBFuturesConstants.adminPicksCollection
+        }
+    }
+
+    var submissionTitle: String {
+        switch self {
+        case .publicBoard: return "MLB Futures"
+        case .adminBoard: return "Admin Picks"
+        }
+    }
+
+    var submissionHeaderTitle: String {
+        switch self {
+        case .publicBoard: return "My Picks"
+        case .adminBoard: return "My Admin Picks"
+        }
+    }
+
+    var submitButtonTitle: (Bool) -> String {
+        { existingPick in
+            switch self {
+            case .publicBoard: return existingPick ? "Update Picks" : "Submit Picks"
+            case .adminBoard: return existingPick ? "Update Admin Picks" : "Submit Admin Picks"
+            }
+        }
+    }
+
+    var lockedMessagePrefix: String {
+        switch self {
+        case .publicBoard: return "Picks"
+        case .adminBoard: return "Admin picks"
+        }
+    }
+
+    var leaderboardSectionTitle: String {
+        switch self {
+        case .publicBoard: return "Public Leaderboard"
+        case .adminBoard: return "Admin Leaderboard"
+        }
     }
 }
 
@@ -202,6 +256,8 @@ struct MLBFuturesAdminState: Codable {
     let updatedAt: Timestamp
     let updatedBy: String?
     let isFinal: Bool
+    let finalizedAt: Timestamp?
+    let finalizedBy: String?
 
     let currentDivisionStandings: [String: [String]]
     let currentALSeeds: [String]
@@ -259,12 +315,12 @@ struct MLBFuturesTeamSummary: Identifiable {
 }
 
 struct MLBFuturesSubmissionDraft {
-    var alEast = MLBFuturesConstants.teams(in: .alEast).map(\ .id)
-    var alCentral = MLBFuturesConstants.teams(in: .alCentral).map(\ .id)
-    var alWest = MLBFuturesConstants.teams(in: .alWest).map(\ .id)
-    var nlEast = MLBFuturesConstants.teams(in: .nlEast).map(\ .id)
-    var nlCentral = MLBFuturesConstants.teams(in: .nlCentral).map(\ .id)
-    var nlWest = MLBFuturesConstants.teams(in: .nlWest).map(\ .id)
+    var alEast = MLBFuturesConstants.teams(in: .alEast).map(\.id)
+    var alCentral = MLBFuturesConstants.teams(in: .alCentral).map(\.id)
+    var alWest = MLBFuturesConstants.teams(in: .alWest).map(\.id)
+    var nlEast = MLBFuturesConstants.teams(in: .nlEast).map(\.id)
+    var nlCentral = MLBFuturesConstants.teams(in: .nlCentral).map(\.id)
+    var nlWest = MLBFuturesConstants.teams(in: .nlWest).map(\.id)
 
     var alSeeds: [String] = []
     var nlSeeds: [String] = []
@@ -294,6 +350,25 @@ struct MLBFuturesSubmissionDraft {
         if worldSeriesWinner.isEmpty {
             worldSeriesWinner = worldSeriesTeams.first ?? ""
         }
+    }
+
+    init() {}
+
+    init(from picks: MLBFuturesPicksDoc) {
+        alEast = picks.alEast
+        alCentral = picks.alCentral
+        alWest = picks.alWest
+        nlEast = picks.nlEast
+        nlCentral = picks.nlCentral
+        nlWest = picks.nlWest
+        alSeeds = picks.alSeeds
+        nlSeeds = picks.nlSeeds
+        aldsTeams = picks.aldsTeams
+        nldsTeams = picks.nldsTeams
+        alcsTeams = picks.alcsTeams
+        nlcsTeams = picks.nlcsTeams
+        worldSeriesTeams = picks.worldSeriesTeams
+        worldSeriesWinner = picks.worldSeriesWinner
     }
 
     func asPicksDoc(userId: String, displayName: String) -> MLBFuturesPicksDoc {

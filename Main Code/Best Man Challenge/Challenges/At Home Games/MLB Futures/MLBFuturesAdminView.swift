@@ -17,49 +17,82 @@ struct MLBFuturesAdminView: View {
 
     var body: some View {
         Form {
-            ForEach(MLBDivisionKey.allCases) { division in
-                Section(division.displayName) {
-                    orderEditor(teams: Binding(
-                        get: { divisionState[division.rawValue] ?? MLBFuturesConstants.teams(in: division).map(\.id) },
-                        set: { divisionState[division.rawValue] = $0 }
-                    ))
-                }
-            }
-
-            Section("Current Seeds") {
-                orderedTeamList(title: "AL Seeds", teams: $currentALSeeds)
-                orderedTeamList(title: "NL Seeds", teams: $currentNLSeeds)
-            }
-
-            Section("Current Postseason") {
-                tokenList(title: "ALDS", teams: $currentALDS)
-                tokenList(title: "NLDS", teams: $currentNLDS)
-                tokenList(title: "ALCS", teams: $currentALCS)
-                tokenList(title: "NLCS", teams: $currentNLCS)
-                tokenList(title: "World Series", teams: $currentWS)
-
-                Picker("Champion", selection: $currentChampion) {
-                    ForEach(currentWS, id: \.self) { teamId in
-                        Text(MLBFuturesConstants.teamName(teamId)).tag(teamId)
-                    }
-                }
-            }
-
-            if let saveMessage {
-                Section {
-                    Text(saveMessage)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section {
-                Button("Save Admin State") {
-                    save()
-                }
-            }
+            divisionSections
+            currentSeedsSection
+            currentPostseasonSection
+            saveMessageSection
+            saveButtonSection
         }
         .navigationTitle("MLB Futures Admin")
         .onAppear(perform: hydrate)
+    }
+
+    // MARK: - Sections
+
+    private var divisionSections: some View {
+        Group {
+            ForEach(MLBDivisionKey.allCases) { division in
+                Section(division.displayName) {
+                    orderEditor(teams: bindingForDivision(division))
+                }
+            }
+        }
+    }
+
+    private var currentSeedsSection: some View {
+        Section("Current Seeds") {
+            orderedTeamList(title: "AL Seeds", teams: $currentALSeeds)
+            orderedTeamList(title: "NL Seeds", teams: $currentNLSeeds)
+        }
+    }
+
+    private var currentPostseasonSection: some View {
+        Section("Current Postseason") {
+            tokenList(title: "ALDS", teams: $currentALDS)
+            tokenList(title: "NLDS", teams: $currentNLDS)
+            tokenList(title: "ALCS", teams: $currentALCS)
+            tokenList(title: "NLCS", teams: $currentNLCS)
+            tokenList(title: "World Series", teams: $currentWS)
+
+            Picker("Champion", selection: $currentChampion) {
+                Text("None").tag("")
+                ForEach(currentWS, id: \.self) { teamId in
+                    Text(MLBFuturesConstants.teamName(teamId)).tag(teamId)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var saveMessageSection: some View {
+        if let saveMessage {
+            Section {
+                Text(saveMessage)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var saveButtonSection: some View {
+        Section {
+            Button("Save Admin State") {
+                save()
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func bindingForDivision(_ division: MLBDivisionKey) -> Binding<[String]> {
+        Binding(
+            get: {
+                divisionState[division.rawValue] ??
+                MLBFuturesConstants.teams(in: division).map(\.id)
+            },
+            set: { newValue in
+                divisionState[division.rawValue] = newValue
+            }
+        )
     }
 
     private func hydrate() {
@@ -81,6 +114,12 @@ struct MLBFuturesAdminView: View {
             )
             currentALSeeds = []
             currentNLSeeds = []
+            currentALDS = []
+            currentNLDS = []
+            currentALCS = []
+            currentNLCS = []
+            currentWS = []
+            currentChampion = ""
         }
     }
 
@@ -101,6 +140,7 @@ struct MLBFuturesAdminView: View {
                         copy.swapAt(index, index - 1)
                         teams.wrappedValue = copy
                     }
+                    .buttonStyle(.borderless)
                 }
 
                 if index < teams.wrappedValue.count - 1 {
@@ -109,6 +149,7 @@ struct MLBFuturesAdminView: View {
                         copy.swapAt(index, index + 1)
                         teams.wrappedValue = copy
                     }
+                    .buttonStyle(.borderless)
                 }
             }
         }
@@ -120,10 +161,16 @@ struct MLBFuturesAdminView: View {
             Text(title)
                 .font(.headline)
 
-            ForEach(Array(teams.wrappedValue.enumerated()), id: \.offset) { index, teamId in
-                Text("\(index + 1). \(MLBFuturesConstants.teamName(teamId))")
+            if teams.wrappedValue.isEmpty {
+                Text("None selected")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(teams.wrappedValue.enumerated()), id: \.offset) { index, teamId in
+                    Text("\(index + 1). \(MLBFuturesConstants.teamName(teamId))")
+                }
             }
         }
+        .padding(.vertical, 4)
     }
 
     @ViewBuilder
@@ -132,9 +179,19 @@ struct MLBFuturesAdminView: View {
             Text(title)
                 .font(.headline)
 
-            Text(teams.wrappedValue.map(MLBFuturesConstants.teamName).joined(separator: ", "))
+            if teams.wrappedValue.isEmpty {
+                Text("None selected")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(
+                    teams.wrappedValue
+                        .map(MLBFuturesConstants.teamName)
+                        .joined(separator: ", ")
+                )
                 .foregroundStyle(.secondary)
+            }
         }
+        .padding(.vertical, 4)
     }
 
     private func save() {
@@ -143,6 +200,8 @@ struct MLBFuturesAdminView: View {
             updatedAt: Timestamp(date: Date()),
             updatedBy: nil,
             isFinal: false,
+            finalizedAt: nil,
+            finalizedBy: nil,
             currentDivisionStandings: divisionState,
             currentALSeeds: currentALSeeds,
             currentNLSeeds: currentNLSeeds,

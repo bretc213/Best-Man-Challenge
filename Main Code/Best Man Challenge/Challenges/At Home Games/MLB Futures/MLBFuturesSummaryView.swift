@@ -25,11 +25,27 @@ struct MLBFuturesSummaryView: View {
         max(store.picks.count, 1)
     }
 
+    private var locksAtDate: Date? {
+        store.meta?.locksAt?.dateValue()
+    }
+
+    private var isLocked: Bool {
+        guard let locksAtDate else { return false }
+        return Date() < locksAtDate
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if isLocked {
+                    ContentUnavailableView(
+                        "Summary Locked",
+                        systemImage: "lock.fill",
+                        description: Text(lockMessage)
+                    )
+                    .padding(.top, 40)
 
-                if store.picks.isEmpty {
+                } else if store.picks.isEmpty {
                     ContentUnavailableView(
                         "No Picks Yet",
                         systemImage: "chart.bar",
@@ -60,6 +76,15 @@ struct MLBFuturesSummaryView: View {
             .padding(.top)
         }
         .navigationTitle("Summary")
+    }
+
+    private var lockMessage: String {
+        guard let locksAtDate else { return "This page opens once picks lock." }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return "This page opens once picks lock at \(formatter.string(from: locksAtDate))."
     }
 
     @ViewBuilder

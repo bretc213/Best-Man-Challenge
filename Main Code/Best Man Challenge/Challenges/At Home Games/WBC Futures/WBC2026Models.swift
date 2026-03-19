@@ -57,6 +57,9 @@ struct WBCResults {
     var finalFour: [String] = []
     var finalTwo: [String] = []
     var champion: String? = nil
+    var isFinalized: Bool = false
+    var finalizedAt: Date? = nil
+    var finalizedBy: String? = nil
 }
 
 struct WBCMatchup: Identifiable {

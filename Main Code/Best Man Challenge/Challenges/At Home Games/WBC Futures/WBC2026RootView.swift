@@ -87,7 +87,12 @@ struct WBC2026RootView: View {
 
             case .admin:
                 if isExec {
-                    WBCAdminResultsView(picksStore: picksStore, resultsStore: resultsStore)
+                    WBCAdminResultsView(
+                        picksStore: picksStore,
+                        resultsStore: resultsStore,
+                        scoresStore: scoresStore,
+                        session: session
+                    )
                 } else {
                     Text("Admin only.")
                         .foregroundStyle(.secondary)

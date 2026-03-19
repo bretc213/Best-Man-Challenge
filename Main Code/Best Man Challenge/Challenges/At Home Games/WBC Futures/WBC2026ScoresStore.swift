@@ -51,6 +51,29 @@ final class WBC2026ScoresStore: ObservableObject {
         for (_, l) in picksListeners { l.remove() }
     }
 
+    var playerRows: [WBCScoreRow] {
+        scores.filter { groupForPlayerId($0.id) == .players }
+    }
+
+    func buildFinalizerScores() throws -> [String: Int] {
+        let rows = playerRows
+        guard !rows.isEmpty else {
+            throw NSError(
+                domain: "WBC2026",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "No player standings available to finalize."]
+            )
+        }
+
+        var output: [String: Int] = [:]
+        for row in rows {
+            let playerId = row.linkedPlayerId.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = playerId.isEmpty ? row.id : playerId
+            output[key] = row.score
+        }
+        return output
+    }
+
     func startListening() {
         if resultsListener != nil { return }
         stopListening()
@@ -86,8 +109,20 @@ final class WBC2026ScoresStore: ObservableObject {
                 let ff = d["finalFour"] as? [String] ?? []
                 let ft = d["finalTwo"] as? [String] ?? []
                 let champ = d["champion"] as? String
+                let isFinalized = d["isFinalized"] as? Bool ?? false
+                let finalizedAt = (d["finalizedAt"] as? Timestamp)?.dateValue()
+                let finalizedBy = d["finalizedBy"] as? String
+
                 Task { @MainActor in
-                    self.results = WBCResults(poolResults: pool, finalFour: ff, finalTwo: ft, champion: champ)
+                    self.results = WBCResults(
+                        poolResults: pool,
+                        finalFour: ff,
+                        finalTwo: ft,
+                        champion: champ,
+                        isFinalized: isFinalized,
+                        finalizedAt: finalizedAt,
+                        finalizedBy: finalizedBy
+                    )
                     self.recomputeScores()
                 }
             }
@@ -149,9 +184,6 @@ final class WBC2026ScoresStore: ObservableObject {
         var rows: [WBCScoreRow] = []
         rows.reserveCapacity(picksByPlayer.count)
 
-        // KO results are treated as UNORDERED sets.
-        // - finalFour: any order, used to award QF winner points
-        // - finalTwo: any order, used to award SF winner points
         let finalFourSet = Set(results.finalFour.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         let finalTwoSet  = Set(results.finalTwo.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
 
@@ -160,7 +192,6 @@ final class WBC2026ScoresStore: ObservableObject {
             var total = 0
             var breakdown: [String: Int] = [:]
 
-            // Pool scoring
             var poolTotal = 0
             for pool in WBCPool.allCases {
                 let poolKey = pool.rawValue
@@ -170,12 +201,10 @@ final class WBC2026ScoresStore: ObservableObject {
                 let pick1 = entry.poolPicks[poolKey]?["winner"]
                 let pick2 = entry.poolPicks[poolKey]?["runnerUp"]
 
-                // winner slot
                 if let a1 = actual1, !a1.isEmpty {
                     if pick1 == a1 { poolTotal += 4 }
                     else if pick2 == a1 { poolTotal += 2 }
                 }
-                // runner-up slot
                 if let a2 = actual2, !a2.isEmpty {
                     if pick2 == a2 { poolTotal += 4 }
                     else if pick1 == a2 { poolTotal += 2 }
@@ -184,8 +213,6 @@ final class WBC2026ScoresStore: ObservableObject {
             breakdown["Pools"] = poolTotal
             total += poolTotal
 
-            // QF scoring (each correct advancing team = 8)
-            // NOTE: order/slot does NOT matter; award once per unique picked team.
             var qfTotal = 0
             var countedQF: Set<String> = []
             for k in ["qf1", "qf2", "qf3", "qf4"] {
@@ -199,8 +226,6 @@ final class WBC2026ScoresStore: ObservableObject {
             breakdown["Quarters"] = qfTotal
             total += qfTotal
 
-            // SF scoring (each correct advancing team = 16)
-            // NOTE: order/slot does NOT matter; award once per unique picked team.
             var sfTotal = 0
             var countedSF: Set<String> = []
             for k in ["sf1", "sf2"] {
@@ -214,7 +239,6 @@ final class WBC2026ScoresStore: ObservableObject {
             breakdown["Semis"] = sfTotal
             total += sfTotal
 
-            // Champ scoring (correct winner = 32)
             var champTotal = 0
             if let champ = results.champion, !champ.isEmpty, entry.champPick == champ { champTotal = 32 }
             breakdown["Champion"] = champTotal

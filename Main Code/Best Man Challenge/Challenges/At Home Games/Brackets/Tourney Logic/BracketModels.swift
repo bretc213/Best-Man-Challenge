@@ -11,6 +11,9 @@ struct BMCBracketGameMeta: Identifiable {
     let locksAt: Date?
     /// Optional start timestamp ("startsAt" in Firestore)
     let startsAt: Date?
+    let isFinalized: Bool
+    let finalizedAt: Date?
+    let finalizedBy: String?
     let scoring: BMCBracketScoringRules
 
     /// Back-compat alias used by some views.
@@ -20,6 +23,8 @@ struct BMCBracketGameMeta: Identifiable {
         self.id = id
         self.title = (data["title"] as? String) ?? "Bracket"
         self.state = (data["state"] as? String) ?? "coming_up"
+        self.isFinalized = (data["isFinalized"] as? Bool) ?? false
+        self.finalizedBy = data["finalizedBy"] as? String
 
         // locksAt (preferred) or lockAt (legacy)
         if let ts = (data["locksAt"] as? Timestamp) ?? (data["lockAt"] as? Timestamp) {
@@ -36,6 +41,14 @@ struct BMCBracketGameMeta: Identifiable {
             self.startsAt = d
         } else {
             self.startsAt = nil
+        }
+
+        if let ts = data["finalizedAt"] as? Timestamp {
+            self.finalizedAt = ts.dateValue()
+        } else if let d = data["finalizedAt"] as? Date {
+            self.finalizedAt = d
+        } else {
+            self.finalizedAt = nil
         }
 
         self.scoring = BMCBracketScoringRules(data: data["scoring"] as? [String: Any])

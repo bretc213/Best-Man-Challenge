@@ -48,14 +48,23 @@ final class WBC2026ResultsStore: ObservableObject {
 
                 let d = snap?.data() ?? [:]
                 let pool = d["poolResults"] as? [String: [String: String]] ?? [:]
-
-                // Semifinalists + finalists (order does NOT matter for scoring)
                 let ff = d["finalFour"] as? [String] ?? []
                 let ft = d["finalTwo"] as? [String] ?? []
                 let champ = d["champion"] as? String
+                let isFinalized = d["isFinalized"] as? Bool ?? false
+                let finalizedAt = (d["finalizedAt"] as? Timestamp)?.dateValue()
+                let finalizedBy = d["finalizedBy"] as? String
 
                 Task { @MainActor in
-                    self.results = WBCResults(poolResults: pool, finalFour: ff, finalTwo: ft, champion: champ)
+                    self.results = WBCResults(
+                        poolResults: pool,
+                        finalFour: ff,
+                        finalTwo: ft,
+                        champion: champ,
+                        isFinalized: isFinalized,
+                        finalizedAt: finalizedAt,
+                        finalizedBy: finalizedBy
+                    )
                     self.isLoading = false
                 }
             }
@@ -66,9 +75,65 @@ final class WBC2026ResultsStore: ObservableObject {
         isLoading = false
     }
 
+    func finalizeStandings(rows: [WBCScoreRow], finalizedBy: String) async throws {
+        guard !results.isFinalized else {
+            throw NSError(
+                domain: "WBC2026",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "WBC is already finalized."]
+            )
+        }
+
+        let trimmedFinalizer = finalizedBy.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalizerName = trimmedFinalizer.isEmpty ? "Admin" : trimmedFinalizer
+
+        let currentRef = db.collection("brackets")
+            .document(bracketId)
+            .collection("results")
+            .document("current")
+
+        let finalRef = db.collection("brackets")
+            .document(bracketId)
+            .collection("results")
+            .document("final")
+
+        let snapshotRows: [[String: Any]] = rows.enumerated().map { idx, row in
+            [
+                "rank": idx + 1,
+                "linkedPlayerId": row.linkedPlayerId,
+                "displayName": row.displayName,
+                "score": row.score,
+                "breakdown": row.breakdown
+            ]
+        }
+
+        let payload: [String: Any] = [
+            "bracketId": bracketId,
+            "poolResults": results.poolResults,
+            "finalFour": results.finalFour,
+            "finalTwo": results.finalTwo,
+            "champion": results.champion as Any,
+            "finalStandings": snapshotRows,
+            "isFinalized": true,
+            "finalizedBy": finalizerName,
+            "finalizedAt": FieldValue.serverTimestamp()
+        ]
+
+        let batch = db.batch()
+        batch.setData([
+            "isFinalized": true,
+            "finalizedBy": finalizerName,
+            "finalizedAt": FieldValue.serverTimestamp()
+        ], forDocument: currentRef, merge: true)
+        batch.setData(payload, forDocument: finalRef, merge: true)
+        try await batch.commit()
+    }
+
     // MARK: - Writes (Admin)
 
     func setPoolResult(pool: WBCPool, seed: String, teamId: String) async throws {
+        guard !results.isFinalized else { return }
+
         let ref = db.collection("brackets")
             .document(bracketId)
             .collection("results")
@@ -86,15 +151,19 @@ final class WBC2026ResultsStore: ObservableObject {
 
     /// index 0..3 (order does NOT matter; treated as a set for scoring)
     func setFinalFour(index: Int, teamId: String) async throws {
+        guard !results.isFinalized else { return }
         try await setArrayElement(field: "finalFour", index: index, value: teamId, targetCount: 4)
     }
 
     /// index 0..1 (order does NOT matter; treated as a set for scoring)
     func setFinalTwo(index: Int, teamId: String) async throws {
+        guard !results.isFinalized else { return }
         try await setArrayElement(field: "finalTwo", index: index, value: teamId, targetCount: 2)
     }
 
     func setChampion(teamId: String) async throws {
+        guard !results.isFinalized else { return }
+
         let ref = db.collection("brackets")
             .document(bracketId)
             .collection("results")

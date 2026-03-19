@@ -12,13 +12,18 @@ struct BracketAdminResultsView: View {
     @EnvironmentObject var session: SessionStore
     let gameRefId: String
 
+    @State private var meta: BMCBracketGameMeta? = nil
     @State private var matchups: [BMCBracketMatchup] = []
     @State private var teamsById: [String: BMCBracketTeam] = [:]
     @State private var errorMessage: String? = nil
     @State private var isRecomputing: Bool = false
+    @State private var isFinalizing: Bool = false
+    @State private var showAlert: Bool = false
+    @State private var alertMessage: String = ""
 
     private let db = Firestore.firestore()
     private let standingsService = BMCBracketStandingsService()
+    private let multiplier: Double = 1.0
 
     var body: some View {
         ThemedScreen {
@@ -30,20 +35,7 @@ struct BracketAdminResultsView: View {
                 }
 
                 if isOwner {
-                    Section {
-                        Button {
-                            Task { await recomputeStandings() }
-                        } label: {
-                            HStack {
-                                Text(isRecomputing ? "Recomputing..." : "Recompute Standings")
-                                Spacer()
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                            }
-                        }
-                        .disabled(isRecomputing)
-                    } header: {
-                        Text("Admin Tools")
-                    }
+                    adminToolsSection
                 }
 
                 Section {
@@ -71,11 +63,13 @@ struct BracketAdminResultsView: View {
                                         Task { await setWinner(matchupId: m.id, winnerTeamId: home) }
                                     }
                                     .buttonStyle(.bordered)
+                                    .disabled(isFinalized)
 
                                     Button("Set Away Winner") {
                                         Task { await setWinner(matchupId: m.id, winnerTeamId: away) }
                                     }
                                     .buttonStyle(.borderedProminent)
+                                    .disabled(isFinalized)
                                 }
 
                                 if let winner = m.winnerTeamId {
@@ -95,11 +89,77 @@ struct BracketAdminResultsView: View {
             .navigationTitle("Admin")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { Task { await load() } }
+            .alert("Bracket", isPresented: $showAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(alertMessage)
+            }
         }
     }
 
     private var isOwner: Bool {
         (session.profile?.role ?? "") == "owner"
+    }
+
+    private var isFinalized: Bool {
+        meta?.isFinalized ?? false
+    }
+
+    @ViewBuilder
+    private var adminToolsSection: some View {
+        Section {
+            Text("Use recompute while results are still moving. Finalize only once the bracket is done.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            if isFinalized {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Finalized")
+                        .font(.subheadline.bold())
+
+                    if let finalizedAt = meta?.finalizedAt {
+                        Text("Locked on \(finalizedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let finalizedBy = meta?.finalizedBy, !finalizedBy.isEmpty {
+                        Text("By \(finalizedBy)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 4)
+            }
+
+            Button {
+                Task { await recomputeStandings() }
+            } label: {
+                HStack {
+                    Text(isRecomputing ? "Recomputing..." : "Recompute Standings")
+                    Spacer()
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+            }
+            .disabled(isRecomputing || isFinalizing || isFinalized)
+
+            Button {
+                Task { await finalizeBracket() }
+            } label: {
+                HStack {
+                    Text(isFinalizing ? "Finalizing..." : "Finalize Bracket Points")
+                    Spacer()
+                    Image(systemName: "checkmark.seal.fill")
+                }
+            }
+            .disabled(isRecomputing || isFinalizing || isFinalized)
+
+            Text("Finalize uses the current standings, awards challenge points with multiplier ×1, saves a final snapshot, and locks further admin edits for this bracket.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } header: {
+            Text("Admin Tools")
+        }
     }
 
     private func teamName(_ id: String?) -> String? {
@@ -109,6 +169,9 @@ struct BracketAdminResultsView: View {
 
     private func load() async {
         do {
+            let metaSnap = try await db.collection("bracket_games").document(gameRefId).getDocument()
+            let loadedMeta = BMCBracketGameMeta(id: metaSnap.documentID, data: metaSnap.data() ?? [:])
+
             let teamsSnap = try await db.collection("bracket_games")
                 .document(gameRefId)
                 .collection("teams")
@@ -116,7 +179,6 @@ struct BracketAdminResultsView: View {
 
             var map: [String: BMCBracketTeam] = [:]
             for doc in teamsSnap.documents {
-                // BMCBracketTeam initializer is non-failable; no conditional binding.
                 let t = BMCBracketTeam(id: doc.documentID, data: doc.data())
                 map[t.id] = t
             }
@@ -134,6 +196,7 @@ struct BracketAdminResultsView: View {
                 }
 
             await MainActor.run {
+                self.meta = loadedMeta
                 self.teamsById = map
                 self.matchups = ms
                 self.errorMessage = nil
@@ -146,6 +209,8 @@ struct BracketAdminResultsView: View {
     }
 
     private func setWinner(matchupId: String, winnerTeamId: String) async {
+        guard !isFinalized else { return }
+
         do {
             try await db.collection("bracket_games")
                 .document(gameRefId)
@@ -166,17 +231,54 @@ struct BracketAdminResultsView: View {
 
     private func recomputeStandings() async {
         guard isOwner else { return }
+        guard !isFinalized else { return }
+
         isRecomputing = true
         errorMessage = nil
+        defer { isRecomputing = false }
+
         do {
             try await standingsService.recomputeStandings(gameRefId: gameRefId)
-            await MainActor.run {
-                self.isRecomputing = false
-            }
         } catch {
             await MainActor.run {
                 self.errorMessage = "Failed to recompute standings: \(error.localizedDescription)"
-                self.isRecomputing = false
+            }
+        }
+    }
+
+    private func finalizeBracket() async {
+        guard isOwner else { return }
+
+        if isFinalized {
+            await MainActor.run {
+                alertMessage = "This bracket is already finalized."
+                showAlert = true
+            }
+            return
+        }
+
+        isFinalizing = true
+        errorMessage = nil
+        defer { isFinalizing = false }
+
+        do {
+            let finalizedBy = session.profile?.displayName ?? "Admin"
+            try await standingsService.finalizeGame(
+                gameRefId: gameRefId,
+                finalizedBy: finalizedBy,
+                multiplier: multiplier
+            )
+
+            await load()
+            await MainActor.run {
+                alertMessage = "Finalize complete."
+                showAlert = true
+            }
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Failed to finalize bracket: \(error.localizedDescription)"
+                alertMessage = error.localizedDescription
+                showAlert = true
             }
         }
     }
