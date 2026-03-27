@@ -1,8 +1,6 @@
-//
+
 //  BMCBracketStandingsView.swift
 //  Best Man Challenge
-//
-//  Created by Bret Clemetson on 1/31/26.
 //
 
 import SwiftUI
@@ -34,15 +32,19 @@ struct BMCBracketStandingsView: View {
                     .padding(.vertical, 24)
                 } else {
                     ForEach(Array(standings.enumerated()), id: \.element.id) { idx, s in
-                        HStack {
+                        HStack(alignment: .top) {
                             Text("#\(idx + 1)")
                                 .font(.headline)
                                 .frame(width: 44, alignment: .leading)
 
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: 3) {
                                 Text(s.displayName ?? s.playerId)
                                     .font(.headline)
+
                                 Text("\(s.points) pts")
+                                    .font(.subheadline.weight(.semibold))
+
+                                Text("Max potential: \(s.maxPotentialPoints) • Remaining: +\(s.remainingPossiblePoints)")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
@@ -68,7 +70,11 @@ struct BMCBracketStandingsView: View {
 
             let rows = snap.documents
                 .compactMap { BMCBracketStanding(id: $0.documentID, data: $0.data()) }
-                .sorted { $0.points > $1.points }
+                .sorted {
+                    if $0.points != $1.points { return $0.points > $1.points }
+                    if $0.maxPotentialPoints != $1.maxPotentialPoints { return $0.maxPotentialPoints > $1.maxPotentialPoints }
+                    return ($0.displayName ?? $0.playerId) < ($1.displayName ?? $1.playerId)
+                }
 
             await MainActor.run {
                 self.standings = rows

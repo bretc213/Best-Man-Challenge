@@ -1,13 +1,10 @@
+
+//  BracketEngine.swift
+//
+
 import Foundation
 
 enum BracketEngine {
-    // MARK: - Scoring
-
-    /// Computes total points for a single bracket based on finalized results.
-    /// - Parameters:
-    ///   - picks: matchupId -> teamId the player selected
-    ///   - matchups: all matchups (with winnerTeamId when finalized)
-    ///   - rules: scoring rules (points per correct pick by round)
     static func score(
         picks: [String: String],
         matchups: [BMCBracketMatchup],
@@ -35,14 +32,99 @@ enum BracketEngine {
         )
     }
 
-    // MARK: - Bracket graph (single elimination)
+    static func score(
+        picks: [String: String],
+        matchups: [BMCBracketMatchup],
+        rules: BMCBracketScoringRules,
+        simulatedWinners: [String: String]
+    ) -> BMCBracketScoreBreakdown {
+        var total = 0
+        var correctByRound: [Int: Int] = [:]
+        var pointsByRound: [Int: Int] = [:]
+
+        for m in matchups {
+            guard let winner = m.winnerTeamId ?? simulatedWinners[m.id] else { continue }
+            guard let picked = picks[m.id] else { continue }
+            if picked == winner {
+                let pts = rules.pointsPerCorrect(forRound: m.round)
+                total += pts
+                correctByRound[m.round, default: 0] += 1
+                pointsByRound[m.round, default: 0] += pts
+            }
+        }
+
+        return BMCBracketScoreBreakdown(
+            totalPoints: total,
+            correctByRound: correctByRound,
+            pointsByRound: pointsByRound
+        )
+    }
+
+    static func maxPotentialScore(
+        picks: [String: String],
+        matchups: [BMCBracketMatchup],
+        rules: BMCBracketScoringRules
+    ) -> Int {
+        let matchupsById = Dictionary(uniqueKeysWithValues: matchups.map { ($0.id, $0) })
+        let feedersById = buildFeeders(matchups: matchups)
+        var memo: [String: Set<String>] = [:]
+
+        func possibleWinners(for matchupId: String) -> Set<String> {
+            if let cached = memo[matchupId] {
+                return cached
+            }
+            guard let matchup = matchupsById[matchupId] else {
+                return []
+            }
+
+            if let winner = matchup.winnerTeamId {
+                let resolved: Set<String> = [winner]
+                memo[matchupId] = resolved
+                return resolved
+            }
+
+            var candidates = Set<String>()
+            let feeders = feedersById[matchupId]
+
+            if let homeFeederId = feeders?.home {
+                candidates.formUnion(possibleWinners(for: homeFeederId))
+            } else if let homeTeamId = matchup.homeTeamId {
+                candidates.insert(homeTeamId)
+            }
+
+            if let awayFeederId = feeders?.away {
+                candidates.formUnion(possibleWinners(for: awayFeederId))
+            } else if let awayTeamId = matchup.awayTeamId {
+                candidates.insert(awayTeamId)
+            }
+
+            memo[matchupId] = candidates
+            return candidates
+        }
+
+        var total = 0
+
+        for matchup in matchups {
+            guard let pickedTeamId = picks[matchup.id] else { continue }
+            let pts = rules.pointsPerCorrect(forRound: matchup.round)
+
+            if let winner = matchup.winnerTeamId {
+                if pickedTeamId == winner {
+                    total += pts
+                }
+            } else if possibleWinners(for: matchup.id).contains(pickedTeamId) {
+                total += pts
+            }
+        }
+
+        return total
+    }
 
     struct Feeders {
         var home: String? = nil
         var away: String? = nil
     }
 
-    /// Builds a map of `matchupId -> (homeFeederMatchupId, awayFeederMatchupId)` using the `nextMatchupId/nextSlot` wiring.
     static func buildFeeders(matchups: [BMCBracketMatchup]) -> [String: Feeders] {
         var feeders: [String: Feeders] = [:]
 
@@ -64,21 +146,13 @@ enum BracketEngine {
         let tint: BMCBracketMatchupCard.Tint
     }
 
-    /// Resolves which team should be displayed in a slot for a given matchup.
-    /// Priority:
-    /// 1) If slot is fed by a previous matchup:
-    ///    - if feeder winner exists -> show winner (green if user picked correctly, else red)
-    ///    - else if user picked feeder -> show their projection
-    ///    - else -> TBD
-    /// 2) Otherwise use round-1 home/away team ids.
     static func slotDisplay(
         matchup: BMCBracketMatchup,
-        slot: String, // "home" or "away"
+        slot: String,
         picks: [String: String],
         matchupsById: [String: BMCBracketMatchup],
         feedersById: [String: Feeders]
     ) -> SlotResult {
-
         let feeders = feedersById[matchup.id]
         let feederId: String? = (slot == "home") ? feeders?.home : feeders?.away
 
@@ -103,7 +177,6 @@ enum BracketEngine {
             return SlotResult(teamId: nil, tint: .none)
         }
 
-        // Round 1 fallback
         if slot == "home" {
             return SlotResult(teamId: matchup.homeTeamId, tint: .none)
         } else {

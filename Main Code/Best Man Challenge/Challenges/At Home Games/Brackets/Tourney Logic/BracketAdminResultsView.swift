@@ -1,8 +1,10 @@
-//
+
 //  BracketAdminResultsView.swift
 //  Best Man Challenge
 //
-//  Created by Bret Clemetson on 1/31/26.
+//  Updated to auto-advance winners in admin:
+//  - When admin selects a winner, that team is pushed into the next matchup slot
+//  - Downstream winners are cleared so later rounds cannot stay stale
 //
 
 import SwiftUI
@@ -210,16 +212,37 @@ struct BracketAdminResultsView: View {
 
     private func setWinner(matchupId: String, winnerTeamId: String) async {
         guard !isFinalized else { return }
+        guard let current = matchups.first(where: { $0.id == matchupId }) else { return }
 
         do {
-            try await db.collection("bracket_games")
+            let currentRef = db.collection("bracket_games")
                 .document(gameRefId)
                 .collection("matchups")
                 .document(matchupId)
-                .updateData([
-                    "winnerTeamId": winnerTeamId,
+
+            try await currentRef.updateData([
+                "winnerTeamId": winnerTeamId,
+                "updatedAt": FieldValue.serverTimestamp()
+            ])
+
+            if let nextMatchupId = current.nextMatchupId,
+               let nextSlot = current.nextSlot {
+
+                let nextRef = db.collection("bracket_games")
+                    .document(gameRefId)
+                    .collection("matchups")
+                    .document(nextMatchupId)
+
+                let slotField = (nextSlot == "home") ? "homeTeamId" : "awayTeamId"
+
+                try await nextRef.updateData([
+                    slotField: winnerTeamId,
+                    "winnerTeamId": FieldValue.delete(),
                     "updatedAt": FieldValue.serverTimestamp()
                 ])
+
+                try await clearDescendantAdvancement(startingAt: nextMatchupId)
+            }
 
             await load()
         } catch {
@@ -227,6 +250,38 @@ struct BracketAdminResultsView: View {
                 self.errorMessage = "Failed to set winner: \(error.localizedDescription)"
             }
         }
+    }
+
+    private func clearDescendantAdvancement(startingAt matchupId: String) async throws {
+        let ref = db.collection("bracket_games")
+            .document(gameRefId)
+            .collection("matchups")
+            .document(matchupId)
+
+        let snap = try await ref.getDocument()
+        guard let data = snap.data() else { return }
+
+        let matchup = BMCBracketMatchup(id: snap.documentID, data: data)
+
+        guard let nextMatchupId = matchup.nextMatchupId,
+              let nextSlot = matchup.nextSlot else {
+            return
+        }
+
+        let nextRef = db.collection("bracket_games")
+            .document(gameRefId)
+            .collection("matchups")
+            .document(nextMatchupId)
+
+        let slotField = (nextSlot == "home") ? "homeTeamId" : "awayTeamId"
+
+        try await nextRef.updateData([
+            slotField: FieldValue.delete(),
+            "winnerTeamId": FieldValue.delete(),
+            "updatedAt": FieldValue.serverTimestamp()
+        ])
+
+        try await clearDescendantAdvancement(startingAt: nextMatchupId)
     }
 
     private func recomputeStandings() async {

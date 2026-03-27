@@ -1,22 +1,18 @@
+
 import Foundation
 import FirebaseFirestore
-
-// MARK: - Game Meta
 
 struct BMCBracketGameMeta: Identifiable {
     let id: String
     let title: String
     let state: String
-    /// Canonical lock timestamp ("locksAt" in Firestore). Some older docs may use "lockAt".
     let locksAt: Date?
-    /// Optional start timestamp ("startsAt" in Firestore)
     let startsAt: Date?
     let isFinalized: Bool
     let finalizedAt: Date?
     let finalizedBy: String?
     let scoring: BMCBracketScoringRules
 
-    /// Back-compat alias used by some views.
     var lockAt: Date? { locksAt }
 
     init(id: String, data: [String: Any]) {
@@ -26,7 +22,6 @@ struct BMCBracketGameMeta: Identifiable {
         self.isFinalized = (data["isFinalized"] as? Bool) ?? false
         self.finalizedBy = data["finalizedBy"] as? String
 
-        // locksAt (preferred) or lockAt (legacy)
         if let ts = (data["locksAt"] as? Timestamp) ?? (data["lockAt"] as? Timestamp) {
             self.locksAt = ts.dateValue()
         } else if let d = (data["locksAt"] as? Date) ?? (data["lockAt"] as? Date) {
@@ -55,8 +50,6 @@ struct BMCBracketGameMeta: Identifiable {
     }
 }
 
-// MARK: - Teams
-
 struct BMCBracketTeam {
     let id: String
     let name: String
@@ -71,20 +64,14 @@ struct BMCBracketTeam {
     }
 }
 
-// MARK: - Matchups
-
 struct BMCBracketMatchup: Identifiable, Hashable {
     let id: String
     let round: Int
     let gameNumber: Int
     let homeTeamId: String?
     let awayTeamId: String?
-
-    // For bracket graph / advancement
     let nextMatchupId: String?
-    let nextSlot: String? // "home" or "away"
-
-    // Final result
+    let nextSlot: String?
     let winnerTeamId: String?
 
     init(id: String, data: [String: Any]) {
@@ -99,13 +86,11 @@ struct BMCBracketMatchup: Identifiable, Hashable {
     }
 }
 
-// MARK: - Picks Doc (one per player)
-
 struct BMCBracketPicksDoc: Identifiable {
-    let id: String // playerId
+    let id: String
     let playerId: String
     let isLocked: Bool
-    let selections: [String: String] // matchupId -> teamId
+    let selections: [String: String]
     let updatedAt: Date?
 
     init(id: String, data: [String: Any]) {
@@ -124,20 +109,14 @@ struct BMCBracketPicksDoc: Identifiable {
     }
 }
 
-// MARK: - Scoring
-
 struct BMCBracketScoringRules: Hashable {
-    /// Stored in Firestore as scoring.byRound = { "1": 1, "2": 2, ... }
     let byRound: [Int: Int]
 
     init(data: [String: Any]?) {
-        // defaults = March Madness style
         var parsed: [Int: Int] = [:]
 
-        if
-            let data = data,
-            let by = data["byRound"] as? [String: Any]
-        {
+        if let data,
+           let by = data["byRound"] as? [String: Any] {
             for (k, v) in by {
                 let r = Int(k) ?? 0
                 if let i = v as? Int {
@@ -149,7 +128,6 @@ struct BMCBracketScoringRules: Hashable {
         }
 
         if parsed.isEmpty {
-            // 1,2,4,8,16,32... up to 20 rounds if needed
             var pts = 1
             for r in 1...20 {
                 parsed[r] = pts
@@ -171,21 +149,25 @@ struct BMCBracketScoreBreakdown: Hashable {
     let pointsByRound: [Int: Int]
 }
 
-// MARK: - Standings
-
 struct BMCBracketStanding: Identifiable, Hashable {
-    let id: String // playerId
+    let id: String
     let playerId: String
     let displayName: String?
     let points: Int
+    let maxPotentialPoints: Int
     let correctByRound: [String: Int]
     let pointsByRound: [String: Int]
+
+    var remainingPossiblePoints: Int {
+        max(0, maxPotentialPoints - points)
+    }
 
     init(id: String, data: [String: Any]) {
         self.id = id
         self.playerId = (data["playerId"] as? String) ?? id
         self.displayName = data["displayName"] as? String
-        self.points = (data["points"] as? Int) ?? 0
+        self.points = (data["points"] as? Int) ?? ((data["points"] as? NSNumber)?.intValue ?? 0)
+        self.maxPotentialPoints = (data["maxPotentialPoints"] as? Int) ?? ((data["maxPotentialPoints"] as? NSNumber)?.intValue ?? self.points)
         self.correctByRound = (data["correctByRound"] as? [String: Int]) ?? [:]
         self.pointsByRound = (data["pointsByRound"] as? [String: Int]) ?? [:]
     }

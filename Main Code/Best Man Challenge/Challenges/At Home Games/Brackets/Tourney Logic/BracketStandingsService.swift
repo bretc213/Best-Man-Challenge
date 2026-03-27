@@ -1,17 +1,7 @@
+
 import Foundation
 import FirebaseFirestore
 
-/// Computes and writes standings for a bracket game based on:
-/// - matchups.winnerTeamId (admin-set results)
-/// - picks.selections (each player's bracket)
-///
-/// Writes to: bracket_games/{gameId}/standings/{playerId}
-/// Schema:
-///   - playerId: String
-///   - points: Int
-///   - correctByRound: [String:Int]
-///   - pointsByRound: [String:Int]
-///   - updatedAt: serverTimestamp
 final class BMCBracketStandingsService {
     private let db = Firestore.firestore()
     private let directory = PlayerDirectory()
@@ -35,6 +25,7 @@ final class BMCBracketStandingsService {
             let selections = (data["selections"] as? [String: String]) ?? [:]
 
             let breakdown = BracketEngine.score(picks: selections, matchups: matchups, rules: meta.scoring)
+            let maxPotentialPoints = BracketEngine.maxPotentialScore(picks: selections, matchups: matchups, rules: meta.scoring)
 
             let correctByRoundStr = Dictionary(uniqueKeysWithValues: breakdown.correctByRound.map { ("\($0.key)", $0.value) })
             let pointsByRoundStr = Dictionary(uniqueKeysWithValues: breakdown.pointsByRound.map { ("\($0.key)", $0.value) })
@@ -44,6 +35,7 @@ final class BMCBracketStandingsService {
             var payload: [String: Any] = [
                 "playerId": playerId,
                 "points": breakdown.totalPoints,
+                "maxPotentialPoints": maxPotentialPoints,
                 "correctByRound": correctByRoundStr,
                 "pointsByRound": pointsByRoundStr,
                 "updatedAt": FieldValue.serverTimestamp()
@@ -86,6 +78,8 @@ final class BMCBracketStandingsService {
                 "playerId": row.playerId,
                 "displayName": row.displayName ?? "",
                 "points": row.points,
+                "maxPotentialPoints": row.maxPotentialPoints,
+                "remainingPossiblePoints": row.remainingPossiblePoints,
                 "correctByRound": row.correctByRound,
                 "pointsByRound": row.pointsByRound
             ]
@@ -151,6 +145,7 @@ final class BMCBracketStandingsService {
             .compactMap { BMCBracketStanding(id: $0.documentID, data: $0.data()) }
             .sorted {
                 if $0.points != $1.points { return $0.points > $1.points }
+                if $0.maxPotentialPoints != $1.maxPotentialPoints { return $0.maxPotentialPoints > $1.maxPotentialPoints }
                 return ($0.displayName ?? $0.playerId) < ($1.displayName ?? $1.playerId)
             }
     }
