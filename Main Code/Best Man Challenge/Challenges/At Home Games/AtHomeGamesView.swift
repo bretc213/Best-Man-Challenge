@@ -165,6 +165,7 @@ struct AtHomeGamesView: View {
             BracketRootView(gameRefId: ref)
         } else {
             switch game.route {
+
             case "cfb_bracket":
                 CFBBracketView()
 
@@ -180,6 +181,9 @@ struct AtHomeGamesView: View {
                     displayName: session.profile?.displayName ?? "Player",
                     isAdmin: isAdmin
                 )
+
+            case "the_masters_2026":
+                        MastersDraftRootView(gameRefId: "masters_draft_2026")
 
             default:
                 ComingSoonChallengeView(

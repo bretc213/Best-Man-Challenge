@@ -24,6 +24,12 @@ struct MLBFuturesRootView: View {
                 : [.submit, .allPicks, .summary, .standings]
     }
 
+    /// Regular players submit to the public board.
+    /// Admin-only accounts submit to the admin board.
+    private var submissionBoard: MLBFuturesPickBoard {
+        isAdmin ? .adminBoard : .publicBoard
+    }
+
     var body: some View {
         ThemedScreen {
             VStack(spacing: 12) {
@@ -43,7 +49,7 @@ struct MLBFuturesRootView: View {
                             store: store,
                             userId: userId,
                             displayName: displayName,
-                            board: .publicBoard
+                            board: submissionBoard
                         )
 
                     case .allPicks:
