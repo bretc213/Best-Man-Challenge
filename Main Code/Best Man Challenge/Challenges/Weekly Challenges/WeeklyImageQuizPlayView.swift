@@ -154,7 +154,7 @@ struct WeeklyImageQuizPlayView: View {
                 .background(Color.white.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 14))
 
-            TextField("Enter character name", text: binding(for: question.id))
+            TextField("Enter city", text: binding(for: question.id))
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
                 .padding(12)

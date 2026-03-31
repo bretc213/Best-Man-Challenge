@@ -80,6 +80,6 @@ struct BestManChallengeApp: App {
         session.start()
 
         // ✅ Seed Week 7 on app open
-        await WeeklyChallengeSeeder2026W11.seedIfNeeded()
+        await WeeklyChallengeSeeder2026W13.seedIfNeeded()
     }
 }
