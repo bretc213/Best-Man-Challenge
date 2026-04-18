@@ -14,14 +14,13 @@ struct MainTabView: View {
     var body: some View {
         TabView {
 
-            // ✅ Wrap Home in NavigationView so Home buttons can push screens
             NavigationView {
                 HomeView()
             }
             .tabItem {
                 VStack {
                     Image(systemName: "house.fill")
-                    Text("Home")
+                    Text("Main")
                 }
             }
 
@@ -36,6 +35,28 @@ struct MainTabView: View {
             }
 
             NavigationView {
+                LeaderboardView()
+            }
+            .tabItem {
+                VStack {
+                    Image(systemName: "list.number")
+                    Text("Leaderboard")
+                }
+            }
+
+            NavigationView {
+                //BMCCoinMissionBoardView()
+                UnderConstructionView()
+            }
+            .tabItem {
+                VStack {
+                    Image(systemName: "target")
+                    Text("Missions")
+                }
+            }
+
+            // These will appear under More automatically.
+            NavigationView {
                 EventsRootView()
             }
             .tabItem {
@@ -46,12 +67,13 @@ struct MainTabView: View {
             }
 
             NavigationView {
-                LeaderboardView()
+                //BMCShopView()
+                UnderConstructionView()
             }
             .tabItem {
                 VStack {
-                    Image(systemName: "list.number")
-                    Text("Leaderboard")
+                    Image(systemName: "cart.fill")
+                    Text("Shop")
                 }
             }
 
