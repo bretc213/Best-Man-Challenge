@@ -1,12 +1,12 @@
 import Foundation
 import FirebaseFirestore
 
-
 @MainActor
 final class BMCMissionsStore: ObservableObject {
     @Published var missions: [BMCCoinMission] = []
     @Published var myClaims: [BMCCoinMissionClaim] = []
     @Published var pendingClaims: [BMCCoinMissionClaim] = []
+    @Published var reviewedClaims: [BMCCoinMissionClaim] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
 
@@ -14,11 +14,13 @@ final class BMCMissionsStore: ObservableObject {
     private var missionListener: ListenerRegistration?
     private var myClaimsListener: ListenerRegistration?
     private var pendingClaimsListener: ListenerRegistration?
+    private var reviewedClaimsListener: ListenerRegistration?
 
     deinit {
         missionListener?.remove()
         myClaimsListener?.remove()
         pendingClaimsListener?.remove()
+        reviewedClaimsListener?.remove()
     }
 
     func start(forPlayerId playerId: String, isAdmin: Bool) {
@@ -70,6 +72,25 @@ final class BMCMissionsStore: ObservableObject {
                     }
                     do {
                         self.pendingClaims = try snap?.documents.compactMap { try $0.data(as: BMCCoinMissionClaim.self) } ?? []
+                            .sorted { ($0.submittedAt?.dateValue() ?? .distantPast) < ($1.submittedAt?.dateValue() ?? .distantPast) }
+                    } catch {
+                        self.errorMessage = error.localizedDescription
+                    }
+                }
+
+            reviewedClaimsListener?.remove()
+            reviewedClaimsListener = db.collection("coin_mission_claims")
+                .whereField("status", in: [BMCCoinClaimStatus.approved.rawValue, BMCCoinClaimStatus.denied.rawValue])
+                .limit(to: 50)
+                .addSnapshotListener { [weak self] snap, error in
+                    guard let self else { return }
+                    if let error {
+                        self.errorMessage = error.localizedDescription
+                        return
+                    }
+                    do {
+                        self.reviewedClaims = try snap?.documents.compactMap { try $0.data(as: BMCCoinMissionClaim.self) } ?? []
+                            .sorted { ($0.reviewedAt?.dateValue() ?? .distantPast) > ($1.reviewedAt?.dateValue() ?? .distantPast) }
                     } catch {
                         self.errorMessage = error.localizedDescription
                     }
@@ -85,29 +106,50 @@ final class BMCMissionsStore: ObservableObject {
         myClaims.contains { $0.missionId == missionId && $0.status == .pending }
     }
 
+    func latestClaim(for missionId: String) -> BMCCoinMissionClaim? {
+        myClaims
+            .filter { $0.missionId == missionId }
+            .sorted { ($0.submittedAt?.dateValue() ?? .distantPast) > ($1.submittedAt?.dateValue() ?? .distantPast) }
+            .first
+    }
+
     func submitClaim(
         mission: BMCCoinMission,
         playerId: String,
         displayName: String,
         proofText: String? = nil,
-        proofImageURL: String? = nil
+        proofCode: String? = nil,
+        proofMediaURL: String? = nil,
+        proofMediaType: BMCProofMediaType? = nil,
+        proofFileName: String? = nil
     ) async throws {
         guard let missionId = mission.id else { return }
 
+        if !mission.repeatable, hasApprovedClaim(for: missionId) || hasPendingClaim(for: missionId) {
+            throw NSError(domain: "BMCMissionsStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "You already submitted this mission."])
+        }
+
         let claimRef = db.collection("coin_mission_claims").document()
+        let mediaURL = proofMediaURL
         let claim = BMCCoinMissionClaim(
             id: claimRef.documentID,
             missionId: missionId,
+            missionTitle: mission.title,
             playerId: playerId,
             displayName: displayName,
             status: .pending,
             proofType: mission.proofType,
-            proofText: proofText,
-            proofImageURL: proofImageURL,
+            proofText: clean(proofText),
+            proofCode: clean(proofCode),
+            proofImageURL: mediaURL,
+            proofMediaURL: mediaURL,
+            proofMediaType: proofMediaType,
+            proofFileName: proofFileName,
             coinReward: mission.coinReward,
             submittedAt: Timestamp(date: Date()),
             reviewedAt: nil,
-            reviewedBy: nil
+            reviewedBy: nil,
+            adminNote: nil
         )
 
         try claimRef.setData(from: claim)
@@ -116,7 +158,8 @@ final class BMCMissionsStore: ObservableObject {
     func approveClaim(
         claim: BMCCoinMissionClaim,
         reviewedBy: String,
-        walletStore: BMCCoinWalletStore
+        walletStore: BMCCoinWalletStore,
+        adminNote: String? = nil
     ) async throws {
         guard let claimId = claim.id else { return }
 
@@ -136,12 +179,14 @@ final class BMCMissionsStore: ObservableObject {
 
                 let currentBalance = walletSnap.data()?["balance"] as? Int ?? 0
                 let lifetimeEarned = walletSnap.data()?["lifetimeEarned"] as? Int ?? 0
+                let lifetimeSpent = walletSnap.data()?["lifetimeSpent"] as? Int ?? 0
                 let nextBalance = currentBalance + claim.coinReward
 
                 transaction.updateData([
                     "status": BMCCoinClaimStatus.approved.rawValue,
                     "reviewedAt": FieldValue.serverTimestamp(),
-                    "reviewedBy": reviewedBy
+                    "reviewedBy": reviewedBy,
+                    "adminNote": adminNote ?? NSNull()
                 ], forDocument: claimRef)
 
                 transaction.setData([
@@ -149,7 +194,7 @@ final class BMCMissionsStore: ObservableObject {
                     "displayName": claim.displayName,
                     "balance": nextBalance,
                     "lifetimeEarned": lifetimeEarned + claim.coinReward,
-                    "lifetimeSpent": walletSnap.data()?["lifetimeSpent"] as? Int ?? 0,
+                    "lifetimeSpent": lifetimeSpent,
                     "updatedAt": FieldValue.serverTimestamp()
                 ], forDocument: walletRef, merge: true)
 
@@ -159,7 +204,7 @@ final class BMCMissionsStore: ObservableObject {
                     "balanceAfter": nextBalance,
                     "missionId": claim.missionId,
                     "shopItemId": NSNull(),
-                    "note": "Mission approved",
+                    "note": "Mission approved: \(claim.missionTitle ?? claim.missionId)",
                     "createdAt": FieldValue.serverTimestamp()
                 ], forDocument: txRef)
             } catch {
@@ -169,12 +214,18 @@ final class BMCMissionsStore: ObservableObject {
         }
     }
 
-    func denyClaim(claim: BMCCoinMissionClaim, reviewedBy: String) async throws {
+    func denyClaim(claim: BMCCoinMissionClaim, reviewedBy: String, adminNote: String? = nil) async throws {
         guard let claimId = claim.id else { return }
         try await db.collection("coin_mission_claims").document(claimId).updateData([
             "status": BMCCoinClaimStatus.denied.rawValue,
             "reviewedAt": FieldValue.serverTimestamp(),
-            "reviewedBy": reviewedBy
+            "reviewedBy": reviewedBy,
+            "adminNote": adminNote ?? NSNull()
         ])
+    }
+
+    private func clean(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

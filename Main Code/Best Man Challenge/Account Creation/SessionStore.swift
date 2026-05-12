@@ -6,7 +6,6 @@
 //  Updated: lazy Firestore usage so clearPersistence() can run first.
 //
 
-
 import Foundation
 import FirebaseAuth
 import FirebaseFirestore
@@ -24,7 +23,6 @@ struct UserProfile: Codable {
         case linkedPlayerId = "linked_player_id"
     }
 }
-
 
 @MainActor
 final class SessionStore: ObservableObject {
@@ -112,5 +110,30 @@ final class SessionStore: ObservableObject {
             Auth.auth().removeStateDidChangeListener(h)
             listener = nil
         }
+    }
+}
+
+// MARK: - Convenience Accessors
+
+extension SessionStore {
+    var role: String {
+        profile?.role ?? "player"
+    }
+
+    var isAdmin: Bool {
+        let normalizedRole = role.lowercased()
+        return normalizedRole == "owner" || normalizedRole == "admin"
+    }
+
+    var displayName: String {
+        profile?.displayName ?? firebaseUser?.displayName ?? "Unknown"
+    }
+
+    var linkedPlayerId: String? {
+        profile?.linkedPlayerId
+    }
+
+    var accountId: String {
+        profile?.accountId ?? firebaseUser?.uid ?? "unknown"
     }
 }

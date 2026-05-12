@@ -163,6 +163,13 @@ struct AtHomeGamesView: View {
            let ref = game.gameRefId,
            !ref.isEmpty {
             BracketRootView(gameRefId: ref)
+
+        } else if game.gameType == "softball_bracket" {
+            SoftballBracketRootView(
+                challengeId: game.gameRefId ?? "wcws_2026",
+                session: session
+            )
+
         } else {
             switch game.route {
 
@@ -183,7 +190,7 @@ struct AtHomeGamesView: View {
                 )
 
             case "the_masters_2026":
-                        MastersDraftRootView(gameRefId: "masters_draft_2026")
+                MastersDraftRootView(gameRefId: "masters_draft_2026")
 
             default:
                 ComingSoonChallengeView(
