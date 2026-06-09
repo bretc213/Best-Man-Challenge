@@ -192,6 +192,9 @@ struct AtHomeGamesView: View {
             case "the_masters_2026":
                 MastersDraftRootView(gameRefId: "masters_draft_2026")
 
+            case "world_cup_2026":
+                WorldCup2026RootView()
+
             default:
                 ComingSoonChallengeView(
                     title: game.title,

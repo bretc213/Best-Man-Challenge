@@ -2,7 +2,7 @@
 //  SoftballChallengeSeeder2026.swift
 //  Best Man Challenge
 //
-
+/*
 import Foundation
 import FirebaseFirestore
 
@@ -236,3 +236,4 @@ enum SoftballChallengeSeeder2026 {
         ]
     }
 }
+ */

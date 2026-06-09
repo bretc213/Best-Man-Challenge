@@ -61,11 +61,13 @@ struct InPersonEventsView: View {
                     switch event {
 
                     case .vegasOdds:
-                        // ✅ New Vegas Odds flow entry point
                         VegasOddsHomeView()
 
                     case .pokerNight:
                         PokerNightView(eventId: pokerNightEventId)
+
+                    case .backyardChallenge:
+                        BackyardChallengeHomeView(eventId: "backyard_2026")
 
                     default:
                         ComingSoonView(title: event.title)
