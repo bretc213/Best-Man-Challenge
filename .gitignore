@@ -20,3 +20,5 @@ Package.resolved
 
 # CocoaPods
 Pods/
+serviceAccountKey.json
+**/serviceAccountKey.json
