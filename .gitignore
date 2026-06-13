@@ -24,3 +24,7 @@ Thumbs.db
 diagnose*.txt
 *_output.txt
 pbxproj_dump.txt
+
+# Firebase service account keys - NEVER commit these
+serviceAccountKey.json
+**/serviceAccountKey.json
