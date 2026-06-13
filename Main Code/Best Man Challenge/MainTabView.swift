@@ -55,35 +55,13 @@ struct MainTabView: View {
                 }
             }
 
-            // These will appear under More automatically.
             NavigationView {
-                EventsRootView()
+                MoreRootView()
             }
             .tabItem {
                 VStack {
-                    Image(systemName: "calendar.circle.fill")
-                    Text("Events")
-                }
-            }
-
-            NavigationView {
-                //BMCShopView()
-                UnderConstructionView()
-            }
-            .tabItem {
-                VStack {
-                    Image(systemName: "cart.fill")
-                    Text("Shop")
-                }
-            }
-
-            NavigationView {
-                ProfileView()
-            }
-            .tabItem {
-                VStack {
-                    Image(systemName: "person.crop.circle.fill")
-                    Text("Profile")
+                    Image(systemName: "ellipsis.circle.fill")
+                    Text("More")
                 }
             }
         }

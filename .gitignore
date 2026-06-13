@@ -1,24 +1,26 @@
-# macOS
-.DS_Store
+# Firebase Functions
+functions/node_modules/
+functions/lib/
+functions/.env
+functions/.env.*
 
 # Xcode
-DerivedData/
-.build/
 *.xcuserstate
-*.xccheckout
-*.xcscmblueprint
-*.moved-aside
-*.pbxuser
-*.mode1v3
-*.mode2v3
-*.perspectivev3
 xcuserdata/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
 
-# SwiftPM
-.swiftpm/
-Package.resolved
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
 
-# CocoaPods
-Pods/
-serviceAccountKey.json
-**/serviceAccountKey.json
+# Temporary Claude helper files
+*.command
+diagnose*.txt
+*_output.txt
+pbxproj_dump.txt

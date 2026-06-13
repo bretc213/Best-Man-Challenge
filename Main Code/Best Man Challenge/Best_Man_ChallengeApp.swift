@@ -79,11 +79,15 @@ struct BestManChallengeApp: App {
         // ✅ Start session after persistence attempt
         session.start()
 
-        // ✅ Seed Week 7 on app open
+        // ✅ Weekly challenge seeders
         await WeeklyChallengeSeeder2026W23.seedIfNeeded()
-        
+        await WeeklyChallengeSeeder2026W24.seedIfNeeded()
+        await WeeklyChallengeSeeder2026W31.seedIfNeeded()
+        await WeeklyChallengeSeeder2026W47.seedIfNeeded()
+        await WeeklyChallengeSeeder2026W48.seedIfNeeded()
+
         await BackyardChallengePointsSeeder.seedIfNeeded()
-            
+
         // await SoftballChallengeSeeder2026.seedIfNeeded()
             
     }

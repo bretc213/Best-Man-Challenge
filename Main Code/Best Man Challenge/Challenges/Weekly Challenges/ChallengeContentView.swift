@@ -83,12 +83,45 @@ struct ChallengeContentView: View {
                     .foregroundColor(.secondary)
 
             case .creative:
-                Text("Creative mode coming soon.")
+                Text("Creative submission coming soon.")
                     .foregroundColor(.secondary)
 
-            default:
-                Text("Unsupported challenge type.")
-                    .foregroundColor(.secondary)
+            case .wordle:
+                WordleView(
+                    challengeId: challenge.id,
+                    prompt: challenge.title,
+                    answer: challenge.wordleAnswer,
+                    wordLength: challenge.wordleWordLength,
+                    maxAttempts: challenge.wordleMaxAttempts,
+                    isLocked: challenge.isLocked || wordleFinished
+                )
+                .environmentObject(challengeManager)
+
+            case .multi_wordle:
+                MultiWordleView(challenge: challenge)
+                    .environmentObject(challengeManager)
+
+            case .photo_challenge:
+                PhotoChallengeView(challenge: challenge)
+
+            case .scavenger_hunt:
+                ScavengerHuntView(challenge: challenge)
+
+            case .connections:
+                ConnectionsView(challenge: challenge)
+
+            case .image_quiz:
+                WeeklyQuizChallengeView(
+                    challenge: challenge,
+                    lastSubmission: challengeManager.lastSubmission,
+                    onSubmit: { answers, score, maxScore in
+                        try await challengeManager.submitQuiz(
+                            answers: answers,
+                            score: score,
+                            maxScore: maxScore
+                        )
+                    }
+                )
             }
 
             Spacer(minLength: 0)

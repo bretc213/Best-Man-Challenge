@@ -43,8 +43,17 @@ final class WeeklyChallengeManager: ObservableObject {
     private var propBetsPickListener: ListenerRegistration?
     private var submissionListener: ListenerRegistration?
 
-    init() {
-        startActiveChallengeListener()
+    init(autoStart: Bool = true) {
+        if autoStart { startActiveChallengeListener() }
+    }
+
+    /// Admin/test use only — injects a challenge directly without Firestore.
+    func previewChallenge(_ challenge: WeeklyChallenge) {
+        stopListening()
+        currentChallenge = challenge
+        state = .loaded
+        lastSubmission = nil
+        propBetsPickSummary = nil
     }
 
     deinit {
@@ -453,6 +462,96 @@ final class WeeklyChallengeManager: ObservableObject {
             )
         }
 
+        // MARK: Multi-Wordle
+        var multiWordle: WeeklyChallengeMultiWordle? = nil
+        if let mw = data["multi_wordle"] as? [String: Any],
+           let rawWords = mw["words"] as? [[String: Any]] {
+            let words = rawWords.compactMap { w -> MultiWordleWord? in
+                guard let id = stringValue(w["id"]),
+                      let answer = stringValue(w["answer"]) else { return nil }
+                return MultiWordleWord(
+                    id: id,
+                    answer: answer.uppercased(),
+                    word_length: intValue(w["word_length"]) ?? answer.count,
+                    max_attempts: intValue(w["max_attempts"]) ?? 6,
+                    label: stringValue(w["label"])
+                )
+            }
+            if !words.isEmpty { multiWordle = WeeklyChallengeMultiWordle(words: words) }
+        }
+
+        // MARK: Photo Challenge
+        var photoConfig: WeeklyChallengePhotoConfig? = nil
+        if let pc = data["photo_challenge"] as? [String: Any],
+           let rawPrompts = pc["prompts"] as? [[String: Any]] {
+            let prompts = rawPrompts.compactMap { p -> PhotoChallengePrompt? in
+                guard let id = stringValue(p["id"]),
+                      let label = stringValue(p["label"]) else { return nil }
+                return PhotoChallengePrompt(
+                    id: id,
+                    label: label,
+                    emoji: stringValue(p["emoji"]) ?? "📸",
+                    description: stringValue(p["description"]) ?? ""
+                )
+            }
+            if !prompts.isEmpty {
+                photoConfig = WeeklyChallengePhotoConfig(
+                    prompts: prompts,
+                    points_per_submission: intValue(pc["points_per_submission"]) ?? 2,
+                    bonus_points_per_winner: intValue(pc["bonus_points_per_winner"]) ?? 1,
+                    judge_name: stringValue(pc["judge_name"])
+                )
+            }
+        }
+
+        // MARK: Scavenger Hunt
+        var scavengerConfig: WeeklyChallengeScavengerHuntConfig? = nil
+        if let sh = data["scavenger_hunt"] as? [String: Any],
+           let rawItems = sh["items"] as? [[String: Any]] {
+            let items = rawItems.compactMap { item -> ScavengerHuntItem? in
+                guard let id = stringValue(item["id"]),
+                      let clue = stringValue(item["clue"]) else { return nil }
+                return ScavengerHuntItem(
+                    id: id,
+                    clue: clue,
+                    emoji: stringValue(item["emoji"]) ?? "📷",
+                    point_value: intValue(item["point_value"]) ?? 1
+                )
+            }
+            if !items.isEmpty {
+                scavengerConfig = WeeklyChallengeScavengerHuntConfig(
+                    items: items,
+                    points_per_item: intValue(sh["points_per_item"]) ?? 1
+                )
+            }
+        }
+
+        // MARK: Connections
+        var connectionsConfig: WeeklyChallengeConnectionsConfig? = nil
+        if let conn = data["connections_config"] as? [String: Any],
+           let rawCats = conn["categories"] as? [[String: Any]] {
+            let cats = rawCats.compactMap { cat -> ConnectionsCategory? in
+                guard let id = stringValue(cat["id"]),
+                      let name = stringValue(cat["name"]),
+                      let colorRaw = stringValue(cat["color"]),
+                      let color = ConnectionsColor(rawValue: colorRaw),
+                      let words = cat["words"] as? [String] else { return nil }
+                return ConnectionsCategory(
+                    id: id,
+                    name: name,
+                    color: color,
+                    words: words.map { $0.uppercased() },
+                    point_value: intValue(cat["point_value"]) ?? color.order + 1
+                )
+            }
+            if !cats.isEmpty {
+                connectionsConfig = WeeklyChallengeConnectionsConfig(
+                    categories: cats,
+                    max_mistakes: intValue(conn["max_mistakes"]) ?? 4
+                )
+            }
+        }
+
         return WeeklyChallenge(
             id: doc.documentID,
             week: week,
@@ -469,7 +568,11 @@ final class WeeklyChallengeManager: ObservableObject {
             quiz: quiz,
             wordle: wordle,
             game_format: gameFormat,
-            is_active: isActiveFlag
+            is_active: isActiveFlag,
+            multi_wordle: multiWordle,
+            photo_challenge: photoConfig,
+            scavenger_hunt: scavengerConfig,
+            connections_config: connectionsConfig
         )
     }
 

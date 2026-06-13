@@ -9,6 +9,10 @@ struct WeeklyChallengeView: View {
     @State private var showImageQuiz = false
     @State private var showPropBets = false
     @State private var showWordle = false
+    @State private var showMultiWordle = false
+    @State private var showPhotoChallenge = false
+    @State private var showScavengerHunt = false
+    @State private var showConnections = false
 
     private func deadlineDate(for challenge: WeeklyChallenge) -> Date? {
         challenge.locksAt ?? challenge.endDate
@@ -107,8 +111,40 @@ struct WeeklyChallengeView: View {
                     )
                     .environmentObject(challengeManager)
                 } else {
-                    Text("No active challenge.")
-                        .navigationTitle("Wordle")
+                    Text("No active challenge.").navigationTitle("Wordle")
+                }
+            }
+            .navigationDestination(isPresented: $showMultiWordle) {
+                if let challenge = challengeManager.currentChallenge {
+                    MultiWordleView(challenge: challenge)
+                        .environmentObject(challengeManager)
+                        .environmentObject(session)
+                } else {
+                    Text("No active challenge.").navigationTitle("Triple Wordle")
+                }
+            }
+            .navigationDestination(isPresented: $showPhotoChallenge) {
+                if let challenge = challengeManager.currentChallenge {
+                    PhotoChallengeView(challenge: challenge)
+                        .environmentObject(session)
+                } else {
+                    Text("No active challenge.").navigationTitle("Photo Challenge")
+                }
+            }
+            .navigationDestination(isPresented: $showScavengerHunt) {
+                if let challenge = challengeManager.currentChallenge {
+                    ScavengerHuntView(challenge: challenge)
+                        .environmentObject(session)
+                } else {
+                    Text("No active challenge.").navigationTitle("Scavenger Hunt")
+                }
+            }
+            .navigationDestination(isPresented: $showConnections) {
+                if let challenge = challengeManager.currentChallenge {
+                    ConnectionsView(challenge: challenge)
+                        .environmentObject(session)
+                } else {
+                    Text("No active challenge.").navigationTitle("Connections")
                 }
             }
     }
@@ -210,6 +246,46 @@ struct WeeklyChallengeView: View {
                             (locked ? "Locked." : "Progress saves after each guess."))
                         .foregroundStyle(.secondary)
                         .font(.footnote)
+                }
+
+                if challenge.type == .multi_wordle {
+                    Button { showMultiWordle = true } label: {
+                        Text(locked ? "View Triple Wordle (Locked)" : "Play Triple Wordle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text(locked ? "Submissions are closed." : "Solve all three words for max points.")
+                        .foregroundStyle(.secondary).font(.footnote)
+                }
+
+                if challenge.type == .photo_challenge {
+                    Button { showPhotoChallenge = true } label: {
+                        Text(locked ? "View Photos (Locked)" : "Submit Photos")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text(locked ? "Submissions are closed." : "Upload a photo for each prompt.")
+                        .foregroundStyle(.secondary).font(.footnote)
+                }
+
+                if challenge.type == .scavenger_hunt {
+                    Button { showScavengerHunt = true } label: {
+                        Text(locked ? "View Hunt (Locked)" : "Start Scavenger Hunt")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text(locked ? "Submissions are closed." : "Find each item and upload photo proof.")
+                        .foregroundStyle(.secondary).font(.footnote)
+                }
+
+                if challenge.type == .connections {
+                    Button { showConnections = true } label: {
+                        Text(locked ? "View Connections (Locked)" : "Play Connections")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text(locked ? "Submissions are closed." : "Group four words that share a connection.")
+                        .foregroundStyle(.secondary).font(.footnote)
                 }
 
                 if challenge.type == .prop_bets {

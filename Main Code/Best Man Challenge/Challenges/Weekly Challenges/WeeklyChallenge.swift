@@ -56,6 +56,83 @@ struct WeeklyChallengeQuiz: Codable {
     let image_questions: [WeeklyImageQuizQuestion]?
 }
 
+// MARK: - Multi-Wordle models
+
+struct MultiWordleWord: Identifiable, Codable {
+    let id: String
+    let answer: String
+    let word_length: Int
+    let max_attempts: Int
+    let label: String?
+}
+
+struct WeeklyChallengeMultiWordle: Codable {
+    let words: [MultiWordleWord]
+}
+
+// MARK: - Photo Challenge models
+
+struct PhotoChallengePrompt: Identifiable, Codable {
+    let id: String
+    let label: String
+    let emoji: String
+    let description: String
+}
+
+struct WeeklyChallengePhotoConfig: Codable {
+    let prompts: [PhotoChallengePrompt]
+    let points_per_submission: Int
+    let bonus_points_per_winner: Int
+    let judge_name: String?
+}
+
+// MARK: - Scavenger Hunt models
+
+struct ScavengerHuntItem: Identifiable, Codable {
+    let id: String
+    let clue: String
+    let emoji: String
+    let point_value: Int
+}
+
+struct WeeklyChallengeScavengerHuntConfig: Codable {
+    let items: [ScavengerHuntItem]
+    let points_per_item: Int
+}
+
+// MARK: - Connections models
+
+enum ConnectionsColor: String, Codable, CaseIterable {
+    case yellow, green, blue, purple
+
+    /// Visual difficulty order (0 = easiest/yellow, 3 = hardest/purple)
+    var order: Int {
+        switch self {
+        case .yellow: return 0
+        case .green:  return 1
+        case .blue:   return 2
+        case .purple: return 3
+        }
+    }
+}
+
+struct ConnectionsCategory: Identifiable, Codable {
+    let id: String
+    let name: String
+    let color: ConnectionsColor
+    let words: [String]
+    let point_value: Int
+
+    var allWords: [String] { words }
+}
+
+struct WeeklyChallengeConnectionsConfig: Codable {
+    let categories: [ConnectionsCategory]
+    let max_mistakes: Int
+
+    var allWords: [String] { categories.flatMap { $0.words } }
+}
+
 // MARK: - Main model
 
 struct WeeklyChallenge: Identifiable, Codable {
@@ -77,9 +154,15 @@ struct WeeklyChallenge: Identifiable, Codable {
     let cipher: WeeklyChallengeCipher?
     let quiz: WeeklyChallengeQuiz?
 
-    // ✅ Wordle extras (optional)
+    // Wordle extras (optional)
     let wordle: WeeklyChallengeWordle?
     let game_format: String?
+
+    // New challenge type configs
+    let multi_wordle: WeeklyChallengeMultiWordle?
+    let photo_challenge: WeeklyChallengePhotoConfig?
+    let scavenger_hunt: WeeklyChallengeScavengerHuntConfig?
+    let connections_config: WeeklyChallengeConnectionsConfig?
 
     // Optional Firestore flag
     let is_active: Bool?
@@ -101,7 +184,11 @@ struct WeeklyChallenge: Identifiable, Codable {
         quiz: WeeklyChallengeQuiz? = nil,
         wordle: WeeklyChallengeWordle? = nil,
         game_format: String? = nil,
-        is_active: Bool? = nil
+        is_active: Bool? = nil,
+        multi_wordle: WeeklyChallengeMultiWordle? = nil,
+        photo_challenge: WeeklyChallengePhotoConfig? = nil,
+        scavenger_hunt: WeeklyChallengeScavengerHuntConfig? = nil,
+        connections_config: WeeklyChallengeConnectionsConfig? = nil
     ) {
         self.id = id
         self.week = week
@@ -119,6 +206,10 @@ struct WeeklyChallenge: Identifiable, Codable {
         self.wordle = wordle
         self.game_format = game_format
         self.is_active = is_active
+        self.multi_wordle = multi_wordle
+        self.photo_challenge = photo_challenge
+        self.scavenger_hunt = scavenger_hunt
+        self.connections_config = connections_config
     }
 
     // MARK: - Derived

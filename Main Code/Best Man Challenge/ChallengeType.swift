@@ -15,6 +15,10 @@ enum ChallengeType: String, Codable, CaseIterable {
     case image_quiz
     case prop_bets
     case wordle
+    case photo_challenge
+    case scavenger_hunt
+    case connections
+    case multi_wordle
 
     /// Fallback-safe decoding so unknown future types
     /// don’t crash the whole challenge load.
