@@ -12,75 +12,99 @@ struct ProfileView: View {
     @EnvironmentObject var session: SessionStore
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
+        ThemedScreen {
+            ScrollView {
+                VStack(spacing: 20) {
 
-                Text("Your Profile")
-                    .font(.largeTitle)
-                    .bold()
+                    // ── Profile header ──
+                    VStack(spacing: 8) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 64))
+                            .foregroundStyle(Color.accent)
 
-                // Email (from Firebase Auth)
-                Text("Email: \(Auth.auth().currentUser?.email ?? "N/A")")
-                    .foregroundStyle(.secondary)
-
-                // Firestore-backed profile info
-                if let profile = session.profile {
-                    infoRow(title: "Name", value: profile.displayName)
-                    infoRow(title: "Role", value: profile.role.capitalized)
-                    infoRow(
-                        title: "Linked Player",
-                        value: profile.linkedPlayerId ?? "None"
-                    )
-                } else {
-                    Text("Loading profile…")
-                        .foregroundStyle(.secondary)
-                }
-
-                // ============================
-                // Admin Section
-                // ============================
-                if isAdminLikeUser {
-                    Divider()
-                        .padding(.vertical, 10)
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Admin")
-                            .font(.headline)
-
-                        NavigationLink {
-                            AdminScoringHubView()
-                                .environmentObject(session)
-                        } label: {
-                            HStack {
-                                Label("Scoring Admin", systemImage: "checkmark.seal.fill")
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding()
-                            .background(Color.black.opacity(0.15))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        if let profile = session.profile {
+                            Text(profile.displayName)
+                                .font(.title2.bold())
+                            Text(Auth.auth().currentUser?.email ?? "N/A")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                     }
+                    .padding(.top, 24)
+
+                    // ── Info card ──
+                    if let profile = session.profile {
+                        VStack(spacing: 0) {
+                            infoRow(title: "Role", value: profile.role.capitalized)
+                            Divider().padding(.leading, 16)
+                            infoRow(title: "Linked Player", value: profile.linkedPlayerId ?? "None")
+                        }
+                        .background(Color.card)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        Text("Loading profile…")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    // ── Admin section ──
+                    if isAdminLikeUser {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Admin")
+                                .font(.caption.bold())
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 4)
+
+                            NavigationLink {
+                                AdminScoringHubView()
+                                    .environmentObject(session)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(Color.accent.opacity(0.18))
+                                            .frame(width: 40, height: 40)
+                                        Image(systemName: "checkmark.seal.fill")
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundStyle(Color.accent)
+                                    }
+                                    Text("Scoring Admin")
+                                        .font(.headline)
+                                        .foregroundStyle(Color.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding()
+                                .background(Color.card)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                            }
+                        }
+                    }
+
+                    // ── Log out ──
+                    Button(role: .destructive) {
+                        logoutUser()
+                    } label: {
+                        Text("Log Out")
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.red.opacity(0.12))
+                            .foregroundStyle(.red)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.red.opacity(0.35), lineWidth: 1)
+                            )
+                    }
+
+                    Spacer(minLength: 40)
                 }
-
-                Divider()
-                    .padding(.vertical, 10)
-
-                Button(role: .destructive) {
-                    logoutUser()
-                } label: {
-                    Text("Log Out")
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                }
-                .buttonStyle(.borderedProminent)
-
-                Spacer()
+                .padding(.horizontal)
             }
-            .padding()
         }
+        .navigationTitle("Profile")
     }
 
     // MARK: - Helpers
@@ -107,10 +131,8 @@ struct ProfileView: View {
             Text(value)
                 .fontWeight(.semibold)
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 12)
-        .background(Color.black.opacity(0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
     }
 }
 

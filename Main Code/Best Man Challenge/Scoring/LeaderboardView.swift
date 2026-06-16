@@ -100,58 +100,57 @@ struct LeaderboardView: View {
 
     var body: some View {
         ThemedScreen {
-            NavigationView {
-                List {
-                    if let msg = store.errorMessage {
-                        Text("Couldn’t load leaderboard: \(msg)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .listRowBackground(Color.clear)
-                    }
-
-                    // Mode toggle
-                    Section {
-                        Picker("Leaderboard Mode", selection: $mode) {
-                            ForEach(BoardMode.allCases) { m in
-                                Text(m.rawValue).tag(m)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+            List {
+                if let msg = store.errorMessage {
+                    Text("Couldn’t load leaderboard: \(msg)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                         .listRowBackground(Color.clear)
+                }
+
+                // Mode toggle
+                Section {
+                    Picker("Leaderboard Mode", selection: $mode) {
+                        ForEach(BoardMode.allCases) { m in
+                            Text(m.rawValue).tag(m)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .listRowBackground(Color.clear)
+                }
 
-                    Section(header: leaderboardHeader()) {
-                        ForEach(rankedPlayers, id: \.player.id) { entry in
-                            let isMe = isLoggedInPlayer(entry.player)
+                Section(header: leaderboardHeader()) {
+                    ForEach(rankedPlayers, id: \.player.id) { entry in
+                        let isMe = isLoggedInPlayer(entry.player)
 
-                            Button {
-                                selectedLedgerPlayer = entry.player
-                            } label: {
-                                leaderboardRow(
-                                    rank: entry.rank,
-                                    name: entry.player.name,
-                                    points: entry.player.totalPoints,
-                                    pointsBackText: entry.pointsBack,
-                                    isMe: isMe
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .listRowBackground(Color.clear)
+                        Button {
+                            selectedLedgerPlayer = entry.player
+                        } label: {
+                            leaderboardRow(
+                                rank: entry.rank,
+                                name: entry.player.name,
+                                points: entry.player.totalPoints,
+                                pointsBackText: entry.pointsBack,
+                                isMe: isMe
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Color.clear)
 
-                            // 🔴 Red cutoff line under 5th place (Groomsmen only)
-                            if mode == .groomsmen && entry.rank == wildcardCutoffRank {
-                                Divider()
-                                    .frame(height: 2)
-                                    .background(Color.red)
-                                    .listRowBackground(Color.clear)
-                            }
+                        // 🔴 Red cutoff line under 5th place (Groomsmen only)
+                        if mode == .groomsmen && entry.rank == wildcardCutoffRank {
+                            Divider()
+                                .frame(height: 2)
+                                .background(Color.red)
+                                .listRowBackground(Color.clear)
                         }
                     }
                 }
-                .listStyle(.plain)
-                .background(Color.background)
-                .navigationTitle(mode == .bestMan ? "Leaderboard" : "Groomsmen Race")
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.background)
+            .navigationTitle(mode == .bestMan ? "Leaderboard" : "Groomsmen Race")
         }
         .onAppear { store.startListening() }
         .sheet(item: $selectedLedgerPlayer) { player in

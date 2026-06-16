@@ -60,7 +60,7 @@ struct FolderIconTile: View {
                 .lineLimit(2)
         }
         .padding(12)
-        .background(Color.black.opacity(0.10))
+        .background(Color.card)
         .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 }
