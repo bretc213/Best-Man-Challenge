@@ -19,6 +19,7 @@ enum ChallengeType: String, Codable, CaseIterable {
     case scavenger_hunt
     case connections
     case multi_wordle
+    case halfway_challenge
 
     /// Fallback-safe decoding so unknown future types
     /// don’t crash the whole challenge load.

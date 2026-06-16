@@ -55,6 +55,29 @@ struct AdminScoringHubView: View {
 
                 List {
                     
+                    // -------------------------------
+                    // NFL Pick 'Em Setup
+                    // -------------------------------
+                    Section("NFL Pick 'Em 2026 Setup") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Run once to create the at-home tile and seed all 16 weeks (~270 games) into Firestore.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Button {
+                                Task { await seedNFLPickEm() }
+                            } label: {
+                                Label(
+                                    isRunning ? "Setting up…" : "Setup NFL Pick 'Em",
+                                    systemImage: "football.fill"
+                                )
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!isOwnerAccount() || isRunning)
+                        }
+                        .padding(.vertical, 4)
+                    }
+
                     Section("Maintenance") {
                         Button {
                             Task { await recomputeAllPlayerTotalsFromLedger() }
@@ -130,9 +153,9 @@ struct AdminScoringHubView: View {
                                         VStack(alignment: .trailing, spacing: 2) {
                                             Text("+\(formatPoints(w.winnerBonus))")
                                                 .font(.subheadline).bold()
-                                            Text(w.isFinalized ? "Finalized" : "Not Finalized")
+                                            Text(w.isFinalized ? "Visible in Past Weeks" : "Hidden from Past Weeks")
                                                 .font(.caption2)
-                                                .foregroundColor(w.isFinalized ? .secondary : .orange)
+                                                .foregroundColor(w.isFinalized ? .green : .secondary)
                                         }
                                     }
 
@@ -168,7 +191,7 @@ struct AdminScoringHubView: View {
                                             )
                                         }
                                         .buttonStyle(.borderedProminent)
-                                        .disabled(!isOwnerAccount() || isRunning || !w.isFinalized)
+                                        .disabled(!isOwnerAccount() || isRunning)
 
                                     }
                                 }
@@ -196,6 +219,26 @@ struct AdminScoringHubView: View {
         }
     }
     
+    private func seedNFLPickEm() async {
+        guard isOwnerAccount() else {
+            setStatus("Only owners can run setup.", temporary: true)
+            return
+        }
+
+        isRunning = true
+        setStatus("Creating at-home tile and seeding schedule…", temporary: false)
+
+        do {
+            let seeder = NFLPickEmSeeder()
+            try await seeder.seedAll()
+            setStatus("✅ NFL Pick 'Em setup complete! Tile created + all 16 weeks seeded.", temporary: true)
+        } catch {
+            setStatus("❌ Setup failed: \(error.localizedDescription)", temporary: true)
+        }
+
+        isRunning = false
+    }
+
     private func recomputeAllPlayerTotalsFromLedger() async {
         guard isOwnerAccount() else {
             setStatus("Only owners can recompute totals.", temporary: true)
@@ -296,6 +339,18 @@ struct AdminScoringHubView: View {
                     let provider = WBC2026ScoresProvider(store: store)
                     return try await provider.fetchScoresByPlayer()
                 }
+            ),
+            ChallengeRow(
+                id: "wcws_2026",
+                title: "WCWS 2026 (Overall)",
+                multiplier: 1,
+                description: "Women's College World Series bracket totals (computed from Firestore).",
+                higherIsBetter: true,
+                archivesAtHomeOnFinalize: true,
+                scoreProvider: {
+                    let provider = SoftballBracketScoresProvider(challengeId: "wcws_2026")
+                    return try await provider.fetchScoresByPlayer()
+                }
             )
 
         ]
@@ -386,6 +441,11 @@ struct AdminScoringHubView: View {
 
         do {
             print("🔥 APPLY BONUS tapped for weeklyId:", weeklyId)
+
+            // Mark as finalized so it appears in Past Weeks for all users
+            try await db.collection("weekly_challenges")
+                .document(weeklyId)
+                .setData(["is_finalized": true], merge: true)
 
             let finalizer = ChallengePointsFinalizer()
             try await finalizer.applyWeeklyWinnerBonus(weeklyId: weeklyId)

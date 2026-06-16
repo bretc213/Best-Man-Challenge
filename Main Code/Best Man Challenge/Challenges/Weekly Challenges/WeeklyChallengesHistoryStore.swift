@@ -37,8 +37,26 @@ final class WeeklyChallengesHistoryStore: ObservableObject {
                 }
 
                 let docs = snap?.documents ?? []
+                let now = Date()
                 let parsed: [WeeklyChallenge] = docs.compactMap { doc in
                     WeeklyChallengeManager.parseWeeklyChallenge(doc: doc)
+                }.filter { ch in
+                    // is_finalized is the explicit override:
+                    //   true  → always show in Past Weeks
+                    //   false → always hide
+                    //   nil   → fall back to date logic
+                    if let finalized = ch.is_finalized {
+                        return finalized
+                    }
+
+                    // Date-based fallback: only show challenges that have ended.
+                    if let end = ch.endDate {
+                        return end < now
+                    }
+                    if let start = ch.startDate {
+                        return start < now
+                    }
+                    return false  // no dates, no flag → hide (future placeholder)
                 }
 
                 Task { @MainActor in

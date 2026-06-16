@@ -110,6 +110,9 @@ struct ChallengeContentView: View {
             case .connections:
                 ConnectionsView(challenge: challenge)
 
+            case .halfway_challenge:
+                HalfwayChallengeView(challenge: challenge)
+
             case .image_quiz:
                 WeeklyQuizChallengeView(
                     challenge: challenge,

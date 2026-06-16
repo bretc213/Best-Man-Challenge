@@ -383,7 +383,8 @@ final class WeeklyChallengeManager: ObservableObject {
 
         let answer = stringValue(data["answer"])
         let rules = data["rules"] as? [String]
-        let isActiveFlag = boolValue(data["is_active"])
+        let isActiveFlag    = boolValue(data["is_active"])
+        let isFinalizedFlag = boolValue(data["is_finalized"])
 
         let gameFormat = stringValue(data["game_format"])
         var wordle: WeeklyChallengeWordle? = nil
@@ -569,6 +570,7 @@ final class WeeklyChallengeManager: ObservableObject {
             wordle: wordle,
             game_format: gameFormat,
             is_active: isActiveFlag,
+            is_finalized: isFinalizedFlag,
             multi_wordle: multiWordle,
             photo_challenge: photoConfig,
             scavenger_hunt: scavengerConfig,

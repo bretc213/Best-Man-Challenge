@@ -25,20 +25,9 @@ struct WeeklyChallengesHubView: View {
                             )
                         }
 
-                        /* NavigationLink {
+                        NavigationLink {
                             WeeklyChallengesPastListView(store: historyStore)
                                 .environmentObject(session)
-                                .environmentObject(weeklyManager)
-                        } label: {
-                            hubRow(
-                                title: "Past Weeks",
-                                subtitle: "View prior weekly challenges and results",
-                                systemImage: "clock.arrow.circlepath"
-                            )
-                        } */
-
-                        NavigationLink {
-                            UnderConstructionView()
                         } label: {
                             hubRow(
                                 title: "Past Weeks",

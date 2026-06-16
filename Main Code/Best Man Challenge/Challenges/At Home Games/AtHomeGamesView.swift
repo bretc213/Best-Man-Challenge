@@ -120,6 +120,11 @@ struct AtHomeGamesView: View {
                 } label: {
                     Label("Move to Live", systemImage: "flame.fill")
                 }
+                Button {
+                    Task { await updateState(for: game, to: "archived") }
+                } label: {
+                    Label("Archive", systemImage: "archivebox.fill")
+                }
             }
 
             if game.state == "live" {
@@ -127,6 +132,24 @@ struct AtHomeGamesView: View {
                     Task { await updateState(for: game, to: "coming_up") }
                 } label: {
                     Label("Move back to Coming Up", systemImage: "clock.fill")
+                }
+                Button {
+                    Task { await updateState(for: game, to: "archived") }
+                } label: {
+                    Label("Archive", systemImage: "archivebox.fill")
+                }
+            }
+
+            if game.state == "archived" {
+                Button {
+                    Task { await updateState(for: game, to: "live") }
+                } label: {
+                    Label("Unarchive (Move to Live)", systemImage: "flame.fill")
+                }
+                Button {
+                    Task { await updateState(for: game, to: "coming_up") }
+                } label: {
+                    Label("Unarchive (Move to Coming Up)", systemImage: "clock.fill")
                 }
             }
         }
@@ -194,6 +217,18 @@ struct AtHomeGamesView: View {
 
             case "world_cup_2026":
                 WorldCup2026RootView()
+
+            case "nfl_pickem_2026":
+                if game.state == "coming_up" {
+                    ComingSoonChallengeView(
+                        title: game.title,
+                        subtitle: "Pick every game, every week. Picks lock at kickoff.",
+                        systemImage: "football.fill",
+                        startsAt: game.startsAt
+                    )
+                } else {
+                    NFLPickEmRootView()
+                }
 
             default:
                 ComingSoonChallengeView(

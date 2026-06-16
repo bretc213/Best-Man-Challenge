@@ -13,6 +13,14 @@ struct WeeklyChallengeView: View {
     @State private var showPhotoChallenge = false
     @State private var showScavengerHunt = false
     @State private var showConnections = false
+    @State private var showHalfwayChallenge = false
+    @State private var showPropBetsAdmin = false
+    @State private var showPhotoAdmin = false
+
+    private var isOwnerAccount: Bool {
+        let role = session.profile?.role ?? ""
+        return role == "owner" || role == "commish"
+    }
 
     private func deadlineDate(for challenge: WeeklyChallenge) -> Date? {
         challenge.locksAt ?? challenge.endDate
@@ -147,6 +155,28 @@ struct WeeklyChallengeView: View {
                     Text("No active challenge.").navigationTitle("Connections")
                 }
             }
+            .navigationDestination(isPresented: $showHalfwayChallenge) {
+                if let challenge = challengeManager.currentChallenge {
+                    HalfwayChallengeView(challenge: challenge)
+                        .environmentObject(session)
+                } else {
+                    Text("No active challenge.").navigationTitle("Halfway Challenge")
+                }
+            }
+            .navigationDestination(isPresented: $showPropBetsAdmin) {
+                if let challenge = challengeManager.currentChallenge {
+                    PropBetsAdminGradingView(challenge: challenge)
+                } else {
+                    Text("No active challenge.").navigationTitle("Grade Props")
+                }
+            }
+            .navigationDestination(isPresented: $showPhotoAdmin) {
+                if let challenge = challengeManager.currentChallenge {
+                    PhotoChallengeAdminView(challenge: challenge)
+                } else {
+                    Text("No active challenge.").navigationTitle("Photo Winners")
+                }
+            }
     }
 
     @ViewBuilder
@@ -278,6 +308,16 @@ struct WeeklyChallengeView: View {
                         .foregroundStyle(.secondary).font(.footnote)
                 }
 
+                if challenge.type == .halfway_challenge {
+                    Button { showHalfwayChallenge = true } label: {
+                        Text("Enter the Halfway Challenge")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text("5 mini-games, 6 pts each. Complete a round to unlock the next.")
+                        .foregroundStyle(.secondary).font(.footnote)
+                }
+
                 if challenge.type == .connections {
                     Button { showConnections = true } label: {
                         Text(locked ? "View Connections (Locked)" : "Play Connections")
@@ -307,9 +347,55 @@ struct WeeklyChallengeView: View {
                         noSubmissionCard
                     }
                 }
+
+                // MARK: - Owner-only admin section
+                if isOwnerAccount {
+                    adminCard(challenge)
+                }
             }
             .padding()
         }
+    }
+
+    private func adminCard(_ challenge: WeeklyChallenge) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundStyle(.orange)
+                Text("Admin")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+            }
+
+            if challenge.type == .prop_bets {
+                Button {
+                    showPropBetsAdmin = true
+                } label: {
+                    Label("Grade Prop Bets", systemImage: "checkmark.seal")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+            }
+
+            if challenge.type == .photo_challenge {
+                Button {
+                    showPhotoAdmin = true
+                } label: {
+                    Label("Select Photo Winners", systemImage: "trophy")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+            }
+        }
+        .padding()
+        .background(Color.orange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
     }
 
     private func headerCard(_ challenge: WeeklyChallenge) -> some View {

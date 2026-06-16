@@ -164,8 +164,11 @@ struct WeeklyChallenge: Identifiable, Codable {
     let scavenger_hunt: WeeklyChallengeScavengerHuntConfig?
     let connections_config: WeeklyChallengeConnectionsConfig?
 
-    // Optional Firestore flag
+    // Optional Firestore flags
     let is_active: Bool?
+    /// When true, explicitly includes this challenge in the Past Weeks list.
+    /// When false, explicitly hides it. When nil, visibility falls back to date logic.
+    let is_finalized: Bool?
 
     // ✅ Explicit initializer with defaults (so older call sites keep compiling)
     init(
@@ -185,6 +188,7 @@ struct WeeklyChallenge: Identifiable, Codable {
         wordle: WeeklyChallengeWordle? = nil,
         game_format: String? = nil,
         is_active: Bool? = nil,
+        is_finalized: Bool? = nil,
         multi_wordle: WeeklyChallengeMultiWordle? = nil,
         photo_challenge: WeeklyChallengePhotoConfig? = nil,
         scavenger_hunt: WeeklyChallengeScavengerHuntConfig? = nil,
@@ -206,6 +210,7 @@ struct WeeklyChallenge: Identifiable, Codable {
         self.wordle = wordle
         self.game_format = game_format
         self.is_active = is_active
+        self.is_finalized = is_finalized
         self.multi_wordle = multi_wordle
         self.photo_challenge = photo_challenge
         self.scavenger_hunt = scavenger_hunt

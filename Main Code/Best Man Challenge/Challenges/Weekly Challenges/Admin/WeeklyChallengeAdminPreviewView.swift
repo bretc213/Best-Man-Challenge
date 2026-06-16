@@ -7,6 +7,7 @@
 
 import SwiftUI
 import FirebaseAuth
+import FirebaseFirestore
 
 struct WeeklyChallengeAdminPreviewView: View {
     let challenge: WeeklyChallenge
@@ -15,11 +16,15 @@ struct WeeklyChallengeAdminPreviewView: View {
     // Fresh manager in preview mode (no Firestore listener started)
     @StateObject private var manager = WeeklyChallengeManager(autoStart: false)
 
+    @State private var isFinalized: Bool = false
+    @State private var isSavingFinalized = false
+
     @State private var showWordle           = false
     @State private var showMultiWordle      = false
     @State private var showPhotoChallenge   = false
     @State private var showScavengerHunt    = false
     @State private var showConnections      = false
+    @State private var showHalfwayChallenge = false
     @State private var showQuiz             = false
     @State private var showImageQuiz        = false
     @State private var showPropBets         = false
@@ -34,6 +39,9 @@ struct WeeklyChallengeAdminPreviewView: View {
                 // Info header
                 adminHeaderCard
 
+                // Finalized toggle
+                finalizedToggleCard
+
                 // Game launch button
                 launchSection
 
@@ -47,6 +55,7 @@ struct WeeklyChallengeAdminPreviewView: View {
         .navigationTitle("W\(challenge.week) Preview")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
+            isFinalized = challenge.is_finalized ?? false
             manager.previewChallenge(challenge)
             manager.setUserContext(
                 uid: Auth.auth().currentUser?.uid,
@@ -114,6 +123,12 @@ struct WeeklyChallengeAdminPreviewView: View {
                 PropBetsView(challengeId: challenge.id),
                 isActive: $showPropBets
             ) { EmptyView() }
+
+            NavigationLink(destination:
+                HalfwayChallengeView(challenge: challenge)
+                    .environmentObject(session),
+                isActive: $showHalfwayChallenge
+            ) { EmptyView() }
         }
         // Hidden — zero size
         .frame(width: 0, height: 0)
@@ -161,6 +176,50 @@ struct WeeklyChallengeAdminPreviewView: View {
         }
     }
 
+    // MARK: - Finalized toggle card
+
+    private var finalizedToggleCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $isFinalized) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Visible in Past Weeks")
+                        .font(.subheadline.bold())
+                    Text("When on, this challenge shows in the Past Weeks list for all users.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .tint(Color.accentColor)
+            .onChange(of: isFinalized) { newValue in
+                Task { await saveFinalizedFlag(newValue) }
+            }
+
+            if isSavingFinalized {
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.75)
+                    Text("Saving…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal)
+    }
+
+    private func saveFinalizedFlag(_ value: Bool) async {
+        isSavingFinalized = true
+        defer { isSavingFinalized = false }
+        do {
+            try await Firestore.firestore()
+                .collection("weekly_challenges")
+                .document(challenge.id)
+                .setData(["is_finalized": value], merge: true)
+        } catch {
+            print("⚠️ Failed to save is_finalized:", error.localizedDescription)
+        }
+    }
+
     // MARK: - Launch section
 
     @ViewBuilder
@@ -198,6 +257,9 @@ struct WeeklyChallengeAdminPreviewView: View {
             case .minesweeper:
                 Text("Minesweeper engine not yet built.")
                     .font(.subheadline).foregroundStyle(.secondary).padding()
+
+            case .halfway_challenge:
+                launchButton("Open Halfway Challenge", icon: "trophy.fill") { showHalfwayChallenge = true }
             }
         }
         .padding(.horizontal)
