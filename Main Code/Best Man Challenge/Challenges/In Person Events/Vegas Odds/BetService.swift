@@ -26,9 +26,16 @@ enum BetService {
             return
         }
 
-        // ✅ First: detect if this is a Vegas Odds event.
+        // Detect if this is a Vegas Odds event, then route accordingly.
         let vegasEventRef = db.collection("vegas_odds_events").document(challengeId)
         vegasEventRef.getDocument { eventSnap, eventErr in
+            // Surface read errors immediately — don’t silently fall back to the
+            // legacy path, which would write to the wrong collection.
+            if let eventErr {
+                completion(.failure(eventErr))
+                return
+            }
+
             if let eventSnap, eventSnap.exists {
                 confirmVegasOddsBet(
                     db: db,
@@ -41,7 +48,7 @@ enum BetService {
                     completion: completion
                 )
             } else {
-                // Fallback to legacy behavior (users.event_balance + bets collection)
+                // No Vegas event found — fall back to legacy path.
                 confirmLegacyBet(
                     db: db,
                     uid: uid,
@@ -52,13 +59,6 @@ enum BetService {
                     odds: odds,
                     completion: completion
                 )
-            }
-
-            if let eventErr {
-                // If detection failed for some reason, still try legacy
-                // (Don’t block betting just because this read failed).
-                // NOTE: This is intentionally after the branches above.
-                _ = eventErr
             }
         }
     }

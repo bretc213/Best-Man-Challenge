@@ -310,8 +310,10 @@ final class VegasOddsHistoryStore: ObservableObject {
         errorMessage = nil
 
         let db = Firestore.firestore()
+        // Query by bettorPlayerId (player doc ID) — NOT bettorId (auth UID).
+        // The leaderboard passes player IDs, and bet docs store the player ID in bettorPlayerId.
         listener = db.collection("vegas_odds_bets")
-            .whereField("bettorId", isEqualTo: bettorId)
+            .whereField("bettorPlayerId", isEqualTo: bettorId)
             .addSnapshotListener { [weak self] snap, err in
                 guard let self else { return }
                 if let err {

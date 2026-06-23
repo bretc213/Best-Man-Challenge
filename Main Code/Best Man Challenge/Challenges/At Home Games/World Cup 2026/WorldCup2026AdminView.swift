@@ -128,6 +128,10 @@ struct WorldCup2026AdminView: View {
                         Task {
                             try? await resultsStore.setGroupResult(group: group, slot: slot, teamId: teamId)
                         }
+                    } onClear: {
+                        Task {
+                            try? await resultsStore.setGroupResult(group: group, slot: slot, teamId: "")
+                        }
                     }
                 }
             }
@@ -275,6 +279,7 @@ private struct AdminGroupSlotRow: View {
     let disabledIds: [String]
     let locked: Bool
     let onSelect: (String) -> Void
+    let onClear: (() -> Void)?
 
     var body: some View {
         HStack {
@@ -297,6 +302,16 @@ private struct AdminGroupSlotRow: View {
                 menuLabel
             }
             .disabled(locked)
+
+            if let id = selectedId, !id.isEmpty, !locked {
+                Button {
+                    onClear?()
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+            }
         }
     }
 
@@ -317,7 +332,7 @@ private struct AdminGroupSlotRow: View {
 
     private var displayText: String {
         guard let id = selectedId, !id.isEmpty else { return "Set result…" }
-        return teams.first(where: { $0.id == id })?.abbr ?? id
+        return teams.first(where: { $0.id == id })?.name ?? id
     }
 
     private var slotColor: Color {

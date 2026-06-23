@@ -6,6 +6,7 @@
 //
 //  RULES:
 //   6×4 grid (24 cards = 12 pairs) using groomsmen face photos from Assets.
+//   Players loaded dynamically from Firestore (users with linked_player_id set).
 //   Tap first card → flip it. Tap second card → flip it.
 //   Match → pair stays revealed.
 //   No match → 1 strike, both cards flip back after a brief pause.
@@ -15,23 +16,20 @@
 
 import SwiftUI
 
-// MARK: - Player images (12 of 16, matching asset names)
-
 private let playerAssets: [String] = [
-    "anthonyc", "bretc", "dannyo", "isaiahs",
-    "jakeo", "joeg", "joelr", "kylel",
-    "matthewc", "matthewp", "mitchz", "nohlanh"
+    "bretc", "anthonyc", "kylel", "matthewp",
+    "matthewc", "isaiahs", "joelr", "valentinom",
+    "ronaldp", "mitchz", "dannyo", "jakeo"
 ]
 
 private let maxStrikes = 12
 private let columns = 6
-private let rows = 4
 
 // MARK: - Card model
 
 private struct MemCard: Identifiable {
     let id: UUID = UUID()
-    let playerId: String  // asset name
+    let playerId: String  // asset name = linked_player_id
     var isFaceUp: Bool = false
     var isMatched: Bool = false
 }
@@ -45,7 +43,7 @@ struct MemoryGameView: View {
     @State private var cards: [MemCard] = []
     @State private var strikes: Int = 0
     @State private var firstFlipped: UUID? = nil
-    @State private var isLocked: Bool = false     // locked while mis-match animation plays
+    @State private var isLocked: Bool = false
     @State private var matchedIds: Set<String> = []
     @State private var isComplete = false
 
@@ -55,7 +53,7 @@ struct MemoryGameView: View {
         ScrollView {
             VStack(spacing: 16) {
 
-                // Status bar
+                        // Status bar
                 statusBar
 
                 // Card grid
@@ -84,6 +82,7 @@ struct MemoryGameView: View {
         matchedIds = Set(store.memMatched)
 
         if store.memBoard.isEmpty {
+            guard !playerAssets.isEmpty else { return }
             // New game — create and shuffle board
             let board = (playerAssets + playerAssets).shuffled()
             cards = board.map { MemCard(playerId: $0) }
@@ -93,25 +92,17 @@ struct MemoryGameView: View {
             // Restore board (same card order, matched cards stay face up)
             cards = store.memBoard.map { id in
                 var card = MemCard(playerId: id)
-                card.isMatched = matchedIds.contains(id)  // note: by playerId (two per player)
+                card.isMatched = matchedIds.contains(id)
                 return card
             }
-            // Correctly restore matched state by UUID tracking via index
             restoreMatchedByPlayerIds()
         }
     }
 
     /// Mark already-matched pairs as matched in the cards array.
     private func restoreMatchedByPlayerIds() {
-        // Count how many times each playerId should be matched (0, 1, or 2)
-        var matchCounts: [String: Int] = [:]
-        for id in matchedIds { matchCounts[id, default: 0] += 1 }
-
-        // matched means the pair was found — mark both copies as matched
         for i in cards.indices {
-            let pid = cards[i].playerId
-            let timesMatched = matchCounts[pid] ?? 0
-            if timesMatched >= 1 {
+            if matchedIds.contains(cards[i].playerId) {
                 cards[i].isMatched = true
             }
         }
@@ -195,11 +186,9 @@ struct MemoryGameView: View {
     private func tap(card: MemCard) {
         guard !card.isMatched, !card.isFaceUp, !isLocked else { return }
 
-        // Flip card face up
         flipCard(id: card.id, faceUp: true)
 
         if let firstId = firstFlipped {
-            // Second card tapped
             isLocked = true
             firstFlipped = nil
 
@@ -221,7 +210,6 @@ struct MemoryGameView: View {
                 }
             }
         } else {
-            // First card tapped
             firstFlipped = card.id
         }
     }
@@ -250,7 +238,6 @@ struct MemoryGameView: View {
         strikes += 1
 
         if strikes >= maxStrikes {
-            // Reset board
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 resetBoard()
             }
@@ -275,7 +262,7 @@ struct MemoryGameView: View {
         VStack(spacing: 10) {
             Text("🧠 Memory cleared!")
                 .font(.title.bold())
-            Text("All 12 pairs matched. +6 pts earned.")
+            Text("All \(playerAssets.count) pairs matched. +6 pts earned.")
                 .foregroundStyle(.secondary)
         }
         .padding()

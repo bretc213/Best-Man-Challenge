@@ -277,17 +277,19 @@ struct VegasOddsView: View {
         .onAppear {
             playersStore.startListening()
             eventsStore.startListening()
-            currentUserStore.startListening()   // ✅ ADD THIS
-            
-            if selectedEventId == nil {
-                selectedEventId = eventsStore.events.first?.id
-            }
-            if let id = selectedEventId ?? eventsStore.events.first?.id {
-                selectedEventId = id
-                linesStore.startListening(eventId: id)
-                myBetStore.startListening(eventId: id)
-                bankrollStore.startListening(eventId: id)
-            }
+            currentUserStore.startListening()
+            // NOTE: sub-listeners (lines/bets/bankroll) are started in
+            // onChange(of: eventsStore.events) below, once data actually arrives.
+        }
+        .onChange(of: eventsStore.events) { events in
+            // Auto-select first event the first time events load, then start sub-listeners.
+            // This is the only reliable place to do it — onAppear fires before Firestore
+            // returns data, so eventsStore.events is always empty there.
+            guard selectedEventId == nil, let firstId = events.first?.id else { return }
+            selectedEventId = firstId
+            linesStore.startListening(eventId: firstId)
+            myBetStore.startListening(eventId: firstId)
+            bankrollStore.startListening(eventId: firstId)
         }
         .onChange(of: eventsStore.errorMessage) { msg in
             if let msg {
