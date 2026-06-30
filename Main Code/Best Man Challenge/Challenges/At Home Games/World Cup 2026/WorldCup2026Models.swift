@@ -156,8 +156,13 @@ struct WCScoreRow: Identifiable {
     let id: String          // scopedId ("admin:<id>" for admins lane)
     let linkedPlayerId: String
     let displayName: String
-    let total: Int
-    let byGroup: [String: Int]  // group rawValue -> points
+    let groupTotal: Int
+    let byGroup: [String: Int]      // group rawValue -> points
+    let knockoutTotal: Int
+    let byRound: [String: Int]      // WCKORound.rawValue -> points
+
+    /// Combined Phase 1 + Phase 2 score
+    var total: Int { groupTotal + knockoutTotal }
 
     static func positionPoints(predictedRank: Int, actualRank: Int) -> Int {
         let diff = abs(predictedRank - actualRank)

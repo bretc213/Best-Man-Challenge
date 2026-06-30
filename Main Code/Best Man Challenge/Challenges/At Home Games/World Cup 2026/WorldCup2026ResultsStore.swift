@@ -149,7 +149,10 @@ final class WorldCup2026ResultsStore: ObservableObject {
                 "linkedPlayerId": row.linkedPlayerId,
                 "displayName": row.displayName,
                 "total": row.total,
-                "byGroup": row.byGroup
+                "groupTotal": row.groupTotal,
+                "byGroup": row.byGroup,
+                "knockoutTotal": row.knockoutTotal,
+                "byRound": row.byRound
             ]
         }
 

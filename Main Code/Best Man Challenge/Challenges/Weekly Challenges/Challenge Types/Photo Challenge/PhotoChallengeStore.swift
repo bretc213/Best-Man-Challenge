@@ -105,20 +105,38 @@ final class PhotoChallengeStore: ObservableObject {
             uploadingPromptId = nil
         }
 
+        // 1) Upload to Firebase Storage
+        let cleanUid  = uid.replacingOccurrences(of: "/", with: "_")
+        let cleanCId  = challengeId.replacingOccurrences(of: "/", with: "_")
+        let fileName  = "\(UUID().uuidString).jpg"
+        let path      = "weekly_challenge_photos/\(cleanCId)/\(cleanUid)/\(promptId)/\(fileName)"
+        let ref       = Storage.storage().reference().child(path)
+
+        print("📤 Uploading to path: \(path)")
+        print("📦 Image data size: \(imageData.count) bytes")
+
+        let meta = StorageMetadata()
+        meta.contentType = "image/jpeg"
+
         do {
-            // 1) Upload to Firebase Storage
-            let cleanUid  = uid.replacingOccurrences(of: "/", with: "_")
-            let cleanCId  = challengeId.replacingOccurrences(of: "/", with: "_")
-            let fileName  = "\(UUID().uuidString).jpg"
-            let path      = "weekly_challenge_photos/\(cleanCId)/\(cleanUid)/\(promptId)/\(fileName)"
-            let ref       = Storage.storage().reference().child(path)
+            let resultMeta = try await ref.putDataAsync(imageData, metadata: meta)
+            print("✅ putDataAsync succeeded, file size: \(resultMeta.size ?? -1)")
+        } catch {
+            errorMessage = "Storage put failed: \(error.localizedDescription)"
+            return
+        }
 
-            let meta = StorageMetadata()
-            meta.contentType = "image/jpeg"
-            _ = try await ref.putDataAsync(imageData, metadata: meta)
-            let downloadURL = try await ref.downloadURL()
+        let downloadURL: URL
+        do {
+            downloadURL = try await ref.downloadURL()
+            print("✅ downloadURL: \(downloadURL)")
+        } catch {
+            errorMessage = "Storage URL fetch failed: \(error.localizedDescription)"
+            return
+        }
 
-            // 2) Write URL + timestamp to Firestore
+        // 2) Write URL + timestamp to Firestore
+        do {
             let docRef = db.collection("weekly_challenges")
                 .document(challengeId)
                 .collection("photo_submissions")
@@ -136,9 +154,8 @@ final class PhotoChallengeStore: ObservableObject {
                 "submitted_at": FieldValue.serverTimestamp(),
                 "photos": [promptId: photoData]
             ], merge: true)
-
         } catch {
-            errorMessage = "Upload failed: \(error.localizedDescription)"
+            errorMessage = "Firestore write failed: \(error.localizedDescription)"
         }
     }
 

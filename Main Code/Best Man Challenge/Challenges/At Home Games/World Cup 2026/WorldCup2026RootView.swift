@@ -11,9 +11,10 @@ import UIKit
 struct WorldCup2026RootView: View {
     @EnvironmentObject var session: SessionStore
 
-    @StateObject private var picksStore   = WorldCup2026PicksStore(bracketId: "world_cup_2026")
-    @StateObject private var resultsStore = WorldCup2026ResultsStore(bracketId: "world_cup_2026")
-    @StateObject private var scoresStore  = WorldCup2026ScoresStore(bracketId: "world_cup_2026")
+    @StateObject private var picksStore     = WorldCup2026PicksStore(bracketId: "world_cup_2026")
+    @StateObject private var resultsStore   = WorldCup2026ResultsStore(bracketId: "world_cup_2026")
+    @StateObject private var scoresStore    = WorldCup2026ScoresStore(bracketId: "world_cup_2026")
+    @StateObject private var knockoutStore  = WorldCup2026KnockoutStore(bracketId: "world_cup_2026")
 
     @State private var selectedTab: WCTab = .groupPicks
     @State private var didStart = false
@@ -67,7 +68,12 @@ struct WorldCup2026RootView: View {
             .navigationViewStyle(.stack)
         case .knockout:
             NavigationView {
-                WorldCup2026KnockoutView(picksStore: picksStore, resultsStore: resultsStore)
+                WorldCup2026KnockoutView(
+                    picksStore: picksStore,
+                    resultsStore: resultsStore,
+                    knockoutStore: knockoutStore,
+                    session: session
+                )
             }
             .navigationViewStyle(.stack)
         case .leaderboard:
@@ -97,6 +103,7 @@ struct WorldCup2026RootView: View {
                     picksStore: picksStore,
                     resultsStore: resultsStore,
                     scoresStore: scoresStore,
+                    knockoutStore: knockoutStore,
                     session: session
                 )
             }
@@ -131,6 +138,7 @@ struct WorldCup2026RootView: View {
         )
         resultsStore.startListening()
         scoresStore.startListening()
+        knockoutStore.startListening()
     }
 }
 

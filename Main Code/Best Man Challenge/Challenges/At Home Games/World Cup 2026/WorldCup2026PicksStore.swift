@@ -296,6 +296,32 @@ final class WorldCup2026PicksStore: ObservableObject {
         ], merge: true)
     }
 
+    // MARK: - Write: Knockout Pick
+
+    /// Records a player's winner pick for one knockout match.
+    /// Pass teamId = "" to clear the pick.
+    func setKnockoutPick(matchId: String, teamId: String) async throws {
+        guard let uid = Auth.auth().currentUser?.uid, !uid.isEmpty else { return }
+        guard let displayName = myDisplayName, !displayName.isEmpty else { return }
+
+        let docId = resolveMyDocId() ?? uid
+        let linkedId = myLinkedPlayerId?.isEmpty == false ? myLinkedPlayerId! : uid
+
+        let ref = db.collection("brackets")
+            .document(bracketId)
+            .collection("picks")
+            .document("all")
+            .collection(lane)
+            .document(docId)
+
+        try await ref.setData([
+            "displayName":    displayName,
+            "linkedPlayerId": linkedId,
+            "updatedAt":      Timestamp(date: Date()),
+            "knockoutPicks":  [matchId: teamId]
+        ], merge: true)
+    }
+
     // MARK: - Completion check
 
     /// Returns how many group slots have been filled (max 48).

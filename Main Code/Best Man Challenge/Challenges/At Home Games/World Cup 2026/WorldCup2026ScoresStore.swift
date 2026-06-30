@@ -31,12 +31,20 @@ final class WorldCup2026ScoresStore: ObservableObject {
     private var latestResults: WCResults = WCResults()
     private var picksByPlayer: [String: (displayName: String, entry: WCEntry)] = [:]
 
+    // Phase 2 (knockout) state
+    private var knockoutMatchRound: [String: String] = [:]   // matchId → round rawValue
+    private var knockoutMatchResults: [String: String] = [:] // matchId → winning teamId
+    private var koMatchesListener: ListenerRegistration?
+    private var koResultsListener: ListenerRegistration?
+
     init(bracketId: String = "world_cup_2026") {
         self.bracketId = bracketId
     }
 
     deinit {
         resultsListener?.remove()
+        koMatchesListener?.remove()
+        koResultsListener?.remove()
         for (_, l) in picksListeners { l.remove() }
     }
 
@@ -49,12 +57,16 @@ final class WorldCup2026ScoresStore: ObservableObject {
         errorMessage = nil
 
         listenResults()
+        listenKnockoutMatches()
+        listenKnockoutResults()
         listenLane("players")
         listenLane("admins")
     }
 
     func stopListening() {
         resultsListener?.remove(); resultsListener = nil
+        koMatchesListener?.remove(); koMatchesListener = nil
+        koResultsListener?.remove(); koResultsListener = nil
         for (_, l) in picksListeners { l.remove() }
         picksListeners.removeAll()
         isLoading = false
@@ -127,6 +139,43 @@ final class WorldCup2026ScoresStore: ObservableObject {
         }
     }
 
+    // MARK: - Knockout Listeners
+
+    private func listenKnockoutMatches() {
+        koMatchesListener = db.collection("brackets")
+            .document(bracketId)
+            .collection("knockoutMatches")
+            .addSnapshotListener { [weak self] snap, _ in
+                guard let self else { return }
+                var roundMap: [String: String] = [:]
+                for doc in snap?.documents ?? [] {
+                    if let round = doc.data()["round"] as? String {
+                        roundMap[doc.documentID] = round
+                    }
+                }
+                Task { @MainActor in
+                    self.knockoutMatchRound = roundMap
+                    self.recompute()
+                }
+            }
+    }
+
+    private func listenKnockoutResults() {
+        koResultsListener = db.collection("brackets")
+            .document(bracketId)
+            .collection("knockoutResults")
+            .document("current")
+            .addSnapshotListener { [weak self] snap, _ in
+                guard let self else { return }
+                let d = snap?.data() ?? [:]
+                let matchResults = d["matchResults"] as? [String: String] ?? [:]
+                Task { @MainActor in
+                    self.knockoutMatchResults = matchResults
+                    self.recompute()
+                }
+            }
+    }
+
     // MARK: - Scoring
 
     private func recompute() {
@@ -135,40 +184,50 @@ final class WorldCup2026ScoresStore: ObservableObject {
 
         for (scopedId, v) in picksByPlayer {
             let entry = v.entry
-            var total = 0
+            var groupTotal = 0
             var byGroup: [String: Int] = [:]
 
+            // Phase 1: group stage
             for g in WCGroup.allCases {
                 let groupResult = latestResults.result(for: g)
-                let picks = entry.groupPicks[g.rawValue] ?? [:]
                 var groupPoints = 0
 
-                // For each team in the group that has an actual finish set,
-                // find what rank the user predicted and score accordingly.
                 for slot in WCGroupSlot.allCases {
                     guard let actualTeamId = groupResult.teamId(forSlot: slot),
                           !actualTeamId.isEmpty else { continue }
-
                     let actualRank = slot.rank
-
-                    // Find what rank the user picked for this team
                     if let predictedRank = entry.predictedRank(teamId: actualTeamId, group: g) {
-                        let pts = WCScoreRow.positionPoints(predictedRank: predictedRank, actualRank: actualRank)
-                        groupPoints += pts
+                        groupPoints += WCScoreRow.positionPoints(predictedRank: predictedRank, actualRank: actualRank)
                     }
-                    // If user didn't pick this team at all → 0 points for this slot
                 }
 
                 byGroup[g.rawValue] = groupPoints
-                total += groupPoints
+                groupTotal += groupPoints
+            }
+
+            // Phase 2: knockout picks
+            var knockoutTotal = 0
+            var byRound: [String: Int] = [:]
+
+            for (matchId, actualWinnerId) in knockoutMatchResults {
+                guard !actualWinnerId.isEmpty,
+                      let roundRaw = knockoutMatchRound[matchId],
+                      let round = WCKORound(rawValue: roundRaw) else { continue }
+                let playerPick = entry.knockoutPicks[matchId] ?? ""
+                if playerPick == actualWinnerId {
+                    knockoutTotal += round.points
+                    byRound[roundRaw, default: 0] += round.points
+                }
             }
 
             rows.append(WCScoreRow(
                 id: scopedId,
                 linkedPlayerId: entry.linkedPlayerId,
                 displayName: entry.displayName,
-                total: total,
-                byGroup: byGroup
+                groupTotal: groupTotal,
+                byGroup: byGroup,
+                knockoutTotal: knockoutTotal,
+                byRound: byRound
             ))
         }
 
