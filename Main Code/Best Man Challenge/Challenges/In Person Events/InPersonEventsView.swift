@@ -8,7 +8,7 @@ struct InPersonEventsView: View {
         case vegasOdds
         case pokerNight
         case backyardChallenge
-        case golfSimulator
+        case golf
         case drinkingGames
         case weekendTrip
         case boardVideoGames
@@ -21,7 +21,7 @@ struct InPersonEventsView: View {
             case .vegasOdds:         return "Vegas Odds"
             case .pokerNight:        return "Poker Night"
             case .backyardChallenge: return "Backyard Challenge"
-            case .golfSimulator:     return "Golf Simulator"
+            case .golf:              return "Golf"
             case .drinkingGames:     return "Drinking Games"
             case .weekendTrip:       return "Weekend Trip"
             case .boardVideoGames:   return "Board/Video Games"
@@ -34,7 +34,7 @@ struct InPersonEventsView: View {
             case .vegasOdds:         return "Prop bets and odds challenges"
             case .pokerNight:        return "Texas hold 'em tournament"
             case .backyardChallenge: return "Outdoor head-to-head games"
-            case .golfSimulator:     return "Simulator round scoring"
+            case .golf:              return "Simulator + scramble leaderboard"
             case .drinkingGames:     return "King of the table"
             case .weekendTrip:       return "Points across the full trip"
             case .boardVideoGames:   return "Game night competition"
@@ -47,7 +47,7 @@ struct InPersonEventsView: View {
             case .vegasOdds:         return "suit.diamond.fill"
             case .pokerNight:        return "suit.spade.fill"
             case .backyardChallenge: return "figure.outdoor.cycle"
-            case .golfSimulator:     return "figure.golf"
+            case .golf:              return "figure.golf"
             case .drinkingGames:     return "wineglass.fill"
             case .weekendTrip:       return "airplane"
             case .boardVideoGames:   return "gamecontroller.fill"
@@ -59,7 +59,7 @@ struct InPersonEventsView: View {
             .vegasOdds,
             .pokerNight,
             .backyardChallenge,
-            .golfSimulator,
+            .golf,
             .drinkingGames,
             .weekendTrip,
             .boardVideoGames,
@@ -93,6 +93,8 @@ struct InPersonEventsView: View {
                         PokerNightView(eventId: pokerNightEventId)
                     case .backyardChallenge:
                         BackyardChallengeHomeView(eventId: "backyard_2026")
+                    case .golf:
+                        GolfEventHomeView()
                     default:
                         ComingSoonView(title: event.title)
                     }

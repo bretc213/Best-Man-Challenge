@@ -2,6 +2,12 @@
 //  PhotoChallengeStore.swift
 //  Best Man Challenge
 //
+//  Scoring is admin-gated:
+//  • Photos land as "pending" (no photo_statuses entry) until admin marks Valid or Invalid.
+//  • validatedBaseScore = count of prompts with status "valid" × points_per_submission
+//  • pendingCount = count of photos with no status or status == "pending"
+//  • Bonus (winner) score is unchanged — admin sets via prompt-first view.
+//
 
 import Foundation
 import FirebaseFirestore
@@ -9,7 +15,7 @@ import FirebaseStorage
 import FirebaseAuth
 import SwiftUI
 
-// MARK: - Data models for runtime use
+// MARK: - Data models
 
 struct PhotoEntry {
     let url: String
@@ -17,16 +23,26 @@ struct PhotoEntry {
 }
 
 struct PhotoSubmission: Identifiable {
-    let id: String              // userId / linked player id
+    let id: String              // uid
     let uid: String
     let linkedPlayerId: String?
     let displayName: String?
     let submittedAt: Date?
-    var photos: [String: PhotoEntry]        // promptId -> PhotoEntry
-    var bonusWinners: [String: Bool]        // promptId -> true (admin sets)
+    var photos: [String: PhotoEntry]          // promptId -> PhotoEntry
+    var bonusWinners: [String: Bool]          // promptId -> true (admin sets)
+    var photoStatuses: [String: String]       // promptId -> "pending"|"valid"|"invalid"
 
-    func baseScore(pointsPerSubmission: Int) -> Int {
-        photos.count * pointsPerSubmission
+    // MARK: Scoring
+
+    func pendingCount() -> Int {
+        photos.keys.filter { promptId in
+            let status = photoStatuses[promptId] ?? "pending"
+            return status == "pending"
+        }.count
+    }
+
+    func validatedBaseScore(pointsPerSubmission: Int) -> Int {
+        photos.keys.filter { photoStatuses[$0] == "valid" }.count * pointsPerSubmission
     }
 
     func bonusScore(bonusPointsPerWinner: Int) -> Int {
@@ -34,8 +50,13 @@ struct PhotoSubmission: Identifiable {
     }
 
     func totalScore(config: WeeklyChallengePhotoConfig) -> Int {
-        baseScore(pointsPerSubmission: config.points_per_submission) +
+        validatedBaseScore(pointsPerSubmission: config.points_per_submission) +
         bonusScore(bonusPointsPerWinner: config.bonus_points_per_winner)
+    }
+
+    // Legacy
+    func baseScore(pointsPerSubmission: Int) -> Int {
+        validatedBaseScore(pointsPerSubmission: pointsPerSubmission)
     }
 }
 
@@ -105,7 +126,6 @@ final class PhotoChallengeStore: ObservableObject {
             uploadingPromptId = nil
         }
 
-        // 1) Upload to Firebase Storage
         let cleanUid  = uid.replacingOccurrences(of: "/", with: "_")
         let cleanCId  = challengeId.replacingOccurrences(of: "/", with: "_")
         let fileName  = "\(UUID().uuidString).jpg"
@@ -135,7 +155,7 @@ final class PhotoChallengeStore: ObservableObject {
             return
         }
 
-        // 2) Write URL + timestamp to Firestore
+        // Write URL + timestamp to Firestore. Photo starts as "pending".
         do {
             let docRef = db.collection("weekly_challenges")
                 .document(challengeId)
@@ -152,7 +172,8 @@ final class PhotoChallengeStore: ObservableObject {
                 "linked_player_id": linkedPlayerId as Any,
                 "display_name": displayName as Any,
                 "submitted_at": FieldValue.serverTimestamp(),
-                "photos": [promptId: photoData]
+                "photos": [promptId: photoData],
+                "photo_statuses": [promptId: "pending"]
             ], merge: true)
         } catch {
             errorMessage = "Firestore write failed: \(error.localizedDescription)"
@@ -173,7 +194,6 @@ final class PhotoChallengeStore: ObservableObject {
                 merge: true
             )
 
-            // Also write total score to submissions collection so leaderboard picks it up
             await syncScoreToSubmissions(challengeId: challengeId, userId: userId)
 
         } catch {
@@ -181,7 +201,29 @@ final class PhotoChallengeStore: ObservableObject {
         }
     }
 
-    private func syncScoreToSubmissions(challengeId: String, userId: String) async {
+    // MARK: - Admin: set photo status (Valid / Invalid / Pending)
+
+    func setPhotoStatus(challengeId: String, userId: String, promptId: String, status: String) async {
+        do {
+            let docRef = db.collection("weekly_challenges")
+                .document(challengeId)
+                .collection("photo_submissions")
+                .document(userId)
+
+            try await docRef.setData(
+                ["photo_statuses": [promptId: status]],
+                merge: true
+            )
+
+            await syncScoreToSubmissions(challengeId: challengeId, userId: userId)
+        } catch {
+            errorMessage = "Failed to update status: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Sync score to submissions/
+
+    func syncScoreToSubmissions(challengeId: String, userId: String) async {
         do {
             let snap = try await db.collection("weekly_challenges")
                 .document(challengeId)
@@ -191,9 +233,21 @@ final class PhotoChallengeStore: ObservableObject {
 
             guard let data = snap.data() else { return }
             let sub = Self.parseSubmission(uid: userId, data: data)
-            let pts  = sub.photos.count * 2 + sub.bonusWinners.filter { $0.value }.count
 
-            let linkedId = sub.linkedPlayerId ?? userId
+            // Attempt to get points_per_submission from the challenge doc
+            let challengeSnap = try? await db.collection("weekly_challenges")
+                .document(challengeId)
+                .getDocument()
+            let ptsPerSub: Int = {
+                if let raw = challengeSnap?.data()?["photo_challenge"] as? [String: Any],
+                   let pts = raw["points_per_submission"] as? Int { return pts }
+                return 2  // fallback
+            }()
+
+            let score        = sub.validatedBaseScore(pointsPerSubmission: ptsPerSub) + sub.bonusScore(bonusPointsPerWinner: 1)
+            let pendingScore = sub.pendingCount() * ptsPerSub
+            let linkedId     = sub.linkedPlayerId ?? userId
+
             try await db.collection("weekly_challenges")
                 .document(challengeId)
                 .collection("submissions")
@@ -202,7 +256,8 @@ final class PhotoChallengeStore: ObservableObject {
                     "uid": userId,
                     "linked_player_id": sub.linkedPlayerId as Any,
                     "display_name": sub.displayName as Any,
-                    "score": pts,
+                    "score": score,
+                    "pending_score": pendingScore,
                     "updated_at": FieldValue.serverTimestamp()
                 ], merge: true)
         } catch {
@@ -232,6 +287,8 @@ final class PhotoChallengeStore: ObservableObject {
             bonusWinners = raw
         }
 
+        let photoStatuses = data["photo_statuses"] as? [String: String] ?? [:]
+
         return PhotoSubmission(
             id: uid,
             uid: uid,
@@ -239,7 +296,8 @@ final class PhotoChallengeStore: ObservableObject {
             displayName: displayName,
             submittedAt: submittedAt,
             photos: photos,
-            bonusWinners: bonusWinners
+            bonusWinners: bonusWinners,
+            photoStatuses: photoStatuses
         )
     }
 }

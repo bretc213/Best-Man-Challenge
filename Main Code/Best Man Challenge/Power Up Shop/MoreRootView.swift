@@ -13,9 +13,9 @@ struct MoreRootView: View {
             List {
                 Section {
                     NavigationLink {
-                        EventsRootView()
+                        UnderConstructionView()
                     } label: {
-                        hubRow(title: "Events", subtitle: "Upcoming events and RSVPs", systemImage: "calendar.circle.fill")
+                        hubRow(title: "Missions", subtitle: "Complete missions to earn bonus points", systemImage: "target")
                     }
 
                     NavigationLink {

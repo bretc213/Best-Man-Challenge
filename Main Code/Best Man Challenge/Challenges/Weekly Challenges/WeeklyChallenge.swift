@@ -93,11 +93,16 @@ struct ScavengerHuntItem: Identifiable, Codable {
     let clue: String
     let emoji: String
     let point_value: Int
+    let position: Int?
+    let bonus_eligible: Bool?
+    let bonus_clue: String?
 }
 
 struct WeeklyChallengeScavengerHuntConfig: Codable {
     let items: [ScavengerHuntItem]
     let points_per_item: Int
+    let bonus_item_id: String?
+    let authenticity_note: String?
 }
 
 // MARK: - Connections models

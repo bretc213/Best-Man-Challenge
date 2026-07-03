@@ -45,13 +45,12 @@ struct MainTabView: View {
             }
 
             NavigationView {
-                //BMCCoinMissionBoardView()
-                UnderConstructionView()
+                EventsRootView()
             }
             .tabItem {
                 VStack {
-                    Image(systemName: "target")
-                    Text("Missions")
+                    Image(systemName: "calendar.circle.fill")
+                    Text("Events")
                 }
             }
 

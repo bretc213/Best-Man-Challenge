@@ -67,6 +67,18 @@ struct EventsRootView: View {
                     }
                 }
             }
+
+            if session.isAdmin {
+                Section {
+                    NavigationLink {
+                        EventsAdminView()
+                            .environmentObject(store)
+                    } label: {
+                        Label("View All RSVPs", systemImage: "person.3.fill")
+                            .foregroundStyle(Color.accent)
+                    }
+                }
+            }
         }
         .listStyle(.insetGrouped)
     }

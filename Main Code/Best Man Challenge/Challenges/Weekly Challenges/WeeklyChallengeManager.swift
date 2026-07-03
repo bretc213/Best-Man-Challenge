@@ -516,13 +516,18 @@ final class WeeklyChallengeManager: ObservableObject {
                     id: id,
                     clue: clue,
                     emoji: stringValue(item["emoji"]) ?? "📷",
-                    point_value: intValue(item["point_value"]) ?? 1
+                    point_value: intValue(item["point_value"]) ?? 1,
+                    position: intValue(item["position"]),
+                    bonus_eligible: item["bonus_eligible"] as? Bool,
+                    bonus_clue: stringValue(item["bonus_clue"])
                 )
             }
             if !items.isEmpty {
                 scavengerConfig = WeeklyChallengeScavengerHuntConfig(
                     items: items,
-                    points_per_item: intValue(sh["points_per_item"]) ?? 1
+                    points_per_item: intValue(sh["points_per_item"]) ?? 1,
+                    bonus_item_id: stringValue(sh["bonus_item_id"]),
+                    authenticity_note: stringValue(sh["authenticity_note"])
                 )
             }
         }

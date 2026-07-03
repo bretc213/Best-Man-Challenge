@@ -16,9 +16,17 @@ struct EventDetailView: View {
 
     @State private var selected: RSVPStatus = .yes
     @State private var reason: String = ""
+    @State private var arrivalOption: String = ""
     @State private var isSaving = false
     @State private var error: String?
     @State private var showSaved = false
+    @State private var existingRsvp: EventsStore.StoredRSVP?
+    @State private var isLoadingRsvp = true
+
+    private var needsReconfirmation: Bool {
+        guard let rsvp = existingRsvp else { return false }
+        return rsvp.rsvpVersion != event.rsvpVersion
+    }
 
     var body: some View {
         ThemedScreen {
@@ -29,59 +37,139 @@ struct EventDetailView: View {
                 Text(dateRangeText(event))
                     .foregroundStyle(.secondary)
 
-                if let loc = event.location, !loc.isEmpty {
+                if let loc = event.location, !loc.isEmpty, loc != "TBD" {
                     Text("Location: \(loc)")
+                        .foregroundStyle(.secondary)
+                }
+
+                if let notes = event.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
                 Divider().opacity(0.3)
 
-                Text("RSVP")
-                    .font(.headline)
-
-                HStack(spacing: 10) {
-                    ForEach(RSVPStatus.allCases, id: \.self) { s in
-                        Button {
-                            selected = s
-                            if s == .yes { reason = "" }
-                        } label: {
-                            Text(s.label)
-                                .frame(maxWidth: .infinity)
+                if isLoadingRsvp {
+                    ProgressView()
+                } else {
+                    // Reconfirmation or confirmation banner
+                    if needsReconfirmation {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundStyle(.orange)
+                            Text("Event details changed — please re-confirm your RSVP.")
+                                .font(.subheadline)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(selected == s ? nil : .gray)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.orange.opacity(0.15))
+                        .cornerRadius(8)
+                    } else if let rsvp = existingRsvp {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("You RSVPed: \(rsvp.status.label)")
+                                .font(.subheadline)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.green.opacity(0.15))
+                        .cornerRadius(8)
                     }
-                }
 
-                if selected == .no || selected == .maybe {
-                    TextField("Reason (optional)", text: $reason, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                }
+                    // Arrival options (multi-day trips only)
+                    if let options = event.arrivalOptions, !options.isEmpty, selected == .yes || selected == .maybe {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("When are you arriving?")
+                                .font(.headline)
+                            ForEach(options, id: \.self) { option in
+                                Button {
+                                    arrivalOption = option
+                                } label: {
+                                    HStack {
+                                        Text(option)
+                                            .foregroundStyle(Color.primary)
+                                        Spacer()
+                                        if arrivalOption == option {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(.accent)
+                                        } else {
+                                            Image(systemName: "circle")
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .padding(10)
+                                    .background(arrivalOption == option ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+                                    .cornerRadius(8)
+                                }
+                            }
+                        }
 
-                if let error {
-                    Text(error).foregroundStyle(.red).font(.footnote)
-                }
+                        Divider().opacity(0.3)
+                    }
 
-                Button {
-                    Task { await save() }
-                } label: {
-                    Text(isSaving ? "Saving..." : "Submit RSVP")
-                        .frame(maxWidth: .infinity)
+                    Text(existingRsvp == nil ? "RSVP" : "Update RSVP")
+                        .font(.headline)
+
+                    HStack(spacing: 10) {
+                        ForEach(RSVPStatus.allCases, id: \.self) { s in
+                            Button {
+                                selected = s
+                                if s == .yes { reason = "" }
+                            } label: {
+                                Text(s.label)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(selected == s ? nil : .gray)
+                        }
+                    }
+
+                    if selected == .no || selected == .maybe {
+                        TextField("Reason (optional)", text: $reason, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    if let error {
+                        Text(error).foregroundStyle(.red).font(.footnote)
+                    }
+
+                    Button {
+                        Task { await save() }
+                    } label: {
+                        Text(isSaving ? "Saving..." : "Submit RSVP")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isSaving)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(isSaving)
 
                 Spacer()
             }
             .padding()
             .navigationTitle("Event")
             .navigationBarTitleDisplayMode(.inline)
+            .task { await loadExistingRsvp() }
             .alert("Saved", isPresented: $showSaved) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text("Your RSVP was saved.")
             }
         }
+    }
+
+    private func loadExistingRsvp() async {
+        guard let id = event.id else { isLoadingRsvp = false; return }
+        existingRsvp = await store.fetchMyRSVP(eventId: id)
+        if let rsvp = existingRsvp {
+            selected = rsvp.status
+            reason = rsvp.reason
+            arrivalOption = rsvp.arrivalOption ?? ""
+        } else if let options = event.arrivalOptions, !options.isEmpty {
+            arrivalOption = options[0] // default to first option
+        }
+        isLoadingRsvp = false
     }
 
     private func save() async {
@@ -92,7 +180,9 @@ struct EventDetailView: View {
 
         do {
             let name = session.profile?.displayName
-            try await store.submitRSVP(eventId: id, status: selected, reason: reason, displayName: name)
+            let arrival = (event.arrivalOptions?.isEmpty == false && !arrivalOption.isEmpty) ? arrivalOption : nil
+            try await store.submitRSVP(eventId: id, status: selected, reason: reason, displayName: name, rsvpVersion: event.rsvpVersion, arrivalOption: arrival)
+            existingRsvp = EventsStore.StoredRSVP(status: selected, reason: reason, rsvpVersion: event.rsvpVersion, arrivalOption: arrival)
             showSaved = true
         } catch {
             self.error = error.localizedDescription

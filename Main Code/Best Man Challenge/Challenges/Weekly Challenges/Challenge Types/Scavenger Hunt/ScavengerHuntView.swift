@@ -12,7 +12,7 @@ struct ScavengerHuntView: View {
 
     @StateObject private var store = ScavengerHuntStore()
     @State private var selectedItems: [String: PhotosPickerItem] = [:]
-    @State private var previews:       [String: UIImage] = [:]
+    @State private var previews: [String: UIImage] = [:]
 
     private var config: WeeklyChallengeScavengerHuntConfig? { challenge.scavenger_hunt }
 
@@ -22,7 +22,7 @@ struct ScavengerHuntView: View {
     }
 
     private var linkedPlayerId: String? { session.profile?.linkedPlayerId }
-    private var displayName:    String? { session.profile?.displayName }
+    private var displayName: String? { session.profile?.displayName }
 
     var body: some View {
         ScrollView {
@@ -31,6 +31,9 @@ struct ScavengerHuntView: View {
                 headerCard
 
                 if let config {
+                    if let note = config.authenticity_note {
+                        authenticityCard(note)
+                    }
                     howItWorksCard(config)
                     itemsSection(config)
                 } else {
@@ -72,17 +75,45 @@ struct ScavengerHuntView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
+    // MARK: - Authenticity disclaimer
+
+    private func authenticityCard(_ note: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(.subheadline)
+            Text(note)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.orange.opacity(0.4), lineWidth: 1)
+        )
+    }
+
     // MARK: - How it works
 
     private func howItWorksCard(_ config: WeeklyChallengeScavengerHuntConfig) -> some View {
-        let completed = store.submission?.completedItems.count ?? 0
-        let total     = config.items.count
-        let pts       = store.submission?.score(pointsPerItem: config.points_per_item) ?? 0
+        let sub = store.submission
+        let confirmed  = sub?.validatedScore(bonusItemId: config.bonus_item_id) ?? 0
+        let pending    = sub?.pendingCount() ?? 0
+        let total      = config.items.count
 
         return VStack(alignment: .leading, spacing: 6) {
             Label("How it works", systemImage: "map.fill").font(.headline).foregroundStyle(.accent)
             Text("Find each item and snap a photo as proof.")
-            Text("\(config.points_per_item) pt per item · \(completed)/\(total) completed · \(pts) pts earned")
+            Text("\(config.points_per_item) pt per item · \(confirmed) pts confirmed · \(pending) pending review")
+                .font(.caption).foregroundStyle(.secondary)
+            if let bonusId = config.bonus_item_id,
+               config.items.first(where: { $0.id == bonusId })?.bonus_eligible == true {
+                Text("Item 10 earns a bonus point if both Bret & Amanda are in the photo.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text("\(confirmed)/\(total) items validated")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .font(.subheadline)
@@ -91,36 +122,48 @@ struct ScavengerHuntView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Items
+    // MARK: - Items list
 
     private func itemsSection(_ config: WeeklyChallengeScavengerHuntConfig) -> some View {
-        VStack(spacing: 12) {
-            ForEach(config.items) { item in
+        let sorted = config.items.sorted { ($0.position ?? 99) < ($1.position ?? 99) }
+        return VStack(spacing: 12) {
+            ForEach(sorted) { item in
                 itemCard(item: item, config: config)
             }
         }
     }
 
     private func itemCard(item: ScavengerHuntItem, config: WeeklyChallengeScavengerHuntConfig) -> some View {
-        let isDone       = store.submission?.completedItems[item.id] != nil
-        let preview      = previews[item.id]
-        let existingURL  = store.submission?.completedItems[item.id]
-        let isUploading  = store.isUploading && store.uploadingItemId == item.id
+        let existingURL = store.submission?.completedItems[item.id]
+        let status      = store.submission?.itemStatuses[item.id]
+        let isSubmitted = existingURL != nil
+        let preview     = previews[item.id]
+        let isUploading = store.isUploading && store.uploadingItemId == item.id
+        let isBonusItem = item.bonus_eligible == true
 
         return VStack(alignment: .leading, spacing: 10) {
 
+            // Item header row
             HStack(spacing: 10) {
                 Text(item.emoji).font(.title2)
-                Text(item.clue).font(.subheadline)
-                Spacer()
-                if isDone {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.title3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.clue).font(.subheadline)
+                    if let bonusClue = item.bonus_clue, isBonusItem {
+                        Text(bonusClue)
+                            .font(.caption)
+                            .foregroundStyle(Color(red: 0.82, green: 0.66, blue: 0.22))
+                    }
                 }
+                Spacer()
+                statusBadge(status: status, isSubmitted: isSubmitted)
             }
 
-            // Photo
+            // Bonus subjects selector (item 10 only)
+            if isBonusItem && isSubmitted && !isLocked {
+                subjectsSelector(item: item, config: config)
+            }
+
+            // Photo preview
             if let img = preview {
                 Image(uiImage: img)
                     .resizable().scaledToFill()
@@ -138,7 +181,7 @@ struct ScavengerHuntView: View {
                 }
             }
 
-            // Button
+            // Upload button
             if !isLocked {
                 PhotosPicker(
                     selection: Binding(
@@ -149,7 +192,7 @@ struct ScavengerHuntView: View {
                 ) {
                     HStack {
                         if isUploading { ProgressView().scaleEffect(0.8) }
-                        Text(isDone ? "Replace Photo" : "Upload Proof")
+                        Text(isSubmitted ? "Replace Photo" : "Upload Proof")
                             .frame(maxWidth: .infinity)
                     }
                 }
@@ -160,13 +203,123 @@ struct ScavengerHuntView: View {
                     Task { await handleSelection(newItem, itemId: item.id, config: config) }
                 }
             }
+
+            // Status hint
+            if let status {
+                statusHint(status)
+            }
         }
         .padding()
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(borderColor(status: status, isSubmitted: isSubmitted), lineWidth: 1.5)
+        )
     }
 
-    // MARK: - Photo selection
+    // MARK: - Subjects selector (item 10 bonus)
+
+    private func subjectsSelector(item: ScavengerHuntItem, config: WeeklyChallengeScavengerHuntConfig) -> some View {
+        let current = store.submission?.item10Subjects ?? ""
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Who's in this photo?")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                subjectButton("Bret only", value: "bret", current: current, item: item, config: config)
+                subjectButton("Amanda only", value: "amanda", current: current, item: item, config: config)
+                subjectButton("Both 🎉", value: "both", current: current, item: item, config: config)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func subjectButton(
+        _ label: String,
+        value: String,
+        current: String,
+        item: ScavengerHuntItem,
+        config: WeeklyChallengeScavengerHuntConfig
+    ) -> some View {
+        let isSelected = current == value
+        let gold = Color(red: 0.82, green: 0.66, blue: 0.22)
+
+        return Button {
+            Task {
+                await store.setSubjects(
+                    challengeId: challenge.id,
+                    itemId: item.id,
+                    subjects: value
+                )
+            }
+        } label: {
+            Text(label)
+                .font(.caption.bold())
+                .foregroundStyle(isSelected ? gold : .secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(isSelected ? gold.opacity(0.15) : Color.secondary.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(isSelected ? gold : Color.clear, lineWidth: 1.5)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Status helpers
+
+    @ViewBuilder
+    private func statusBadge(status: String?, isSubmitted: Bool) -> some View {
+        if let status {
+            switch status {
+            case "valid":
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green).font(.title3)
+            case "invalid":
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red).font(.title3)
+            default:
+                if isSubmitted {
+                    Image(systemName: "clock.fill")
+                        .foregroundStyle(.orange).font(.title3)
+                }
+            }
+        } else if isSubmitted {
+            Image(systemName: "clock.fill")
+                .foregroundStyle(.orange).font(.title3)
+        }
+    }
+
+    @ViewBuilder
+    private func statusHint(_ status: String) -> some View {
+        switch status {
+        case "valid":
+            Text("✅ Validated — point awarded")
+                .font(.caption).foregroundStyle(.green)
+        case "invalid":
+            Text("❌ Marked invalid — no point")
+                .font(.caption).foregroundStyle(.red)
+        default:
+            Text("⏳ Submitted — pending review")
+                .font(.caption).foregroundStyle(.orange)
+        }
+    }
+
+    private func borderColor(status: String?, isSubmitted: Bool) -> Color {
+        guard isSubmitted else { return .clear }
+        switch status {
+        case "valid":   return .green.opacity(0.5)
+        case "invalid": return .red.opacity(0.5)
+        default:        return .orange.opacity(0.4)
+        }
+    }
+
+    // MARK: - Photo selection handler
 
     private func handleSelection(_ item: PhotosPickerItem, itemId: String, config: WeeklyChallengeScavengerHuntConfig) async {
         guard let data = try? await item.loadTransferable(type: Data.self) else {
@@ -188,7 +341,6 @@ struct ScavengerHuntView: View {
             displayName: displayName
         )
 
-        await store.syncScore(challengeId: challenge.id, pointsPerItem: config.points_per_item)
         await MainActor.run { selectedItems[itemId] = nil }
     }
 }

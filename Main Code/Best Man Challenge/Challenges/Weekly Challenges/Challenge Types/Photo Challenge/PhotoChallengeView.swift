@@ -28,7 +28,6 @@ struct PhotoChallengeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
 
-                // Header
                 headerCard
 
                 if let config {
@@ -84,14 +83,39 @@ struct PhotoChallengeView: View {
     // MARK: - Scoring rules card
 
     private func scoringRulesCard(_ config: WeeklyChallengePhotoConfig) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let confirmed = store.submission?.validatedBaseScore(pointsPerSubmission: config.points_per_submission) ?? 0
+        let pending   = store.submission?.pendingCount() ?? 0
+        let bonus     = store.submission?.bonusScore(bonusPointsPerWinner: config.bonus_points_per_winner) ?? 0
+
+        return VStack(alignment: .leading, spacing: 6) {
             Label("How it works", systemImage: "star.fill")
                 .font(.headline)
                 .foregroundStyle(Color.accent)
 
-            Text("• \(config.points_per_submission) points for each photo submitted")
+            Text("• \(config.points_per_submission) points for each validated photo")
+            Text("• You must be in your photo")
+                .foregroundStyle(.orange)
             Text("• \(config.bonus_points_per_winner) bonus point per category — \(config.judge_name ?? "judge") picks the winner")
-            Text("• Max \(config.prompts.count * config.points_per_submission + config.prompts.count * config.bonus_points_per_winner) points total")
+            Text("• Points are confirmed after review")
+                .foregroundStyle(.secondary)
+
+            if let sub = store.submission, !sub.photos.isEmpty {
+                Divider()
+                HStack(spacing: 16) {
+                    VStack(spacing: 2) {
+                        Text("\(confirmed + bonus)")
+                            .font(.title3.bold()).foregroundStyle(.green)
+                        Text("confirmed").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if pending > 0 {
+                        VStack(spacing: 2) {
+                            Text("\(pending * config.points_per_submission)")
+                                .font(.title3.bold()).foregroundStyle(.orange)
+                            Text("pending").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
         }
         .font(.subheadline)
         .foregroundStyle(.secondary)
@@ -115,6 +139,8 @@ struct PhotoChallengeView: View {
         let previewImage  = previewImages[prompt.id]
         let isUploading   = store.isUploading && store.uploadingPromptId == prompt.id
         let isWinner      = store.submission?.bonusWinners[prompt.id] == true
+        let status        = store.submission?.photoStatuses[prompt.id]
+        let isSubmitted   = existingEntry != nil
 
         return VStack(alignment: .leading, spacing: 12) {
 
@@ -133,6 +159,7 @@ struct PhotoChallengeView: View {
                         .font(.caption.bold())
                         .foregroundStyle(.yellow)
                 }
+                statusBadge(status: status, isSubmitted: isSubmitted)
             }
 
             // Photo display or placeholder
@@ -183,21 +210,71 @@ struct PhotoChallengeView: View {
                     guard let item else { return }
                     Task { await handlePhotoSelection(item: item, promptId: prompt.id) }
                 }
+            }
 
-                if existingEntry != nil {
-                    Text("✅ Submitted · \(config.points_per_submission) pts earned")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                }
-            } else if existingEntry != nil {
-                Text("✅ Submitted")
-                    .font(.caption)
-                    .foregroundStyle(.green)
+            // Status hint
+            if let status {
+                statusHint(status, config: config)
+            } else if isSubmitted {
+                Text("⏳ Submitted — pending review")
+                    .font(.caption).foregroundStyle(.orange)
             }
         }
         .padding()
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(borderColor(status: status, isSubmitted: isSubmitted), lineWidth: 1.5)
+        )
+    }
+
+    // MARK: - Status helpers
+
+    @ViewBuilder
+    private func statusBadge(status: String?, isSubmitted: Bool) -> some View {
+        if let status {
+            switch status {
+            case "valid":
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green).font(.title3)
+            case "invalid":
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red).font(.title3)
+            default:
+                if isSubmitted {
+                    Image(systemName: "clock.fill")
+                        .foregroundStyle(.orange).font(.title3)
+                }
+            }
+        } else if isSubmitted {
+            Image(systemName: "clock.fill")
+                .foregroundStyle(.orange).font(.title3)
+        }
+    }
+
+    @ViewBuilder
+    private func statusHint(_ status: String, config: WeeklyChallengePhotoConfig) -> some View {
+        switch status {
+        case "valid":
+            Text("✅ Validated — \(config.points_per_submission) pts awarded")
+                .font(.caption).foregroundStyle(.green)
+        case "invalid":
+            Text("❌ Marked invalid — no points")
+                .font(.caption).foregroundStyle(.red)
+        default:
+            Text("⏳ Submitted — pending review")
+                .font(.caption).foregroundStyle(.orange)
+        }
+    }
+
+    private func borderColor(status: String?, isSubmitted: Bool) -> Color {
+        guard isSubmitted else { return .clear }
+        switch status {
+        case "valid":   return .green.opacity(0.5)
+        case "invalid": return .red.opacity(0.5)
+        default:        return .orange.opacity(0.4)
+        }
     }
 
     private func photoPlaceholder(label: String) -> some View {
@@ -225,7 +302,6 @@ struct PhotoChallengeView: View {
             return
         }
 
-        // Compress to ~1 MB JPEG
         let compressed: Data
         if let uiImage = UIImage(data: data),
            let jpeg = uiImage.jpegData(compressionQuality: 0.75) {
@@ -243,7 +319,6 @@ struct PhotoChallengeView: View {
             displayName: displayName
         )
 
-        // Clear the picker selection so re-selecting same photo fires onChange again
         await MainActor.run { selectedItems[promptId] = nil }
     }
 }

@@ -44,7 +44,30 @@ final class EventsStore: ObservableObject {
         listener = nil
     }
 
-    func submitRSVP(eventId: String, status: RSVPStatus, reason: String?, displayName: String?) async throws {
+    // MARK: - RSVP
+
+    struct StoredRSVP {
+        var status: RSVPStatus
+        var reason: String
+        var rsvpVersion: Int?
+        var arrivalOption: String?
+    }
+
+    func fetchMyRSVP(eventId: String) async -> StoredRSVP? {
+        guard let uid = Auth.auth().currentUser?.uid else { return nil }
+        let ref = db.collection("events").document(eventId).collection("rsvps").document(uid)
+        guard let snap = try? await ref.getDocument(),
+              snap.exists,
+              let data = snap.data(),
+              let rawStatus = data["status"] as? String,
+              let status = RSVPStatus(rawValue: rawStatus) else { return nil }
+        let reason = data["reason"] as? String ?? ""
+        let version = data["rsvpVersion"] as? Int
+        let arrivalOption = data["arrivalOption"] as? String
+        return StoredRSVP(status: status, reason: reason, rsvpVersion: version, arrivalOption: arrivalOption)
+    }
+
+    func submitRSVP(eventId: String, status: RSVPStatus, reason: String?, displayName: String?, rsvpVersion: Int? = nil, arrivalOption: String? = nil) async throws {
         guard let uid = Auth.auth().currentUser?.uid else {
             throw NSError(domain: "Events", code: 401, userInfo: [NSLocalizedDescriptionKey: "Not signed in."])
         }
@@ -65,6 +88,14 @@ final class EventsStore: ObservableObject {
             data["reason"] = trimmedReason
         } else {
             data["reason"] = "" // keep schema stable
+        }
+
+        if let v = rsvpVersion {
+            data["rsvpVersion"] = v
+        }
+
+        if let a = arrivalOption {
+            data["arrivalOption"] = a
         }
 
         try await ref.setData(data, merge: true)

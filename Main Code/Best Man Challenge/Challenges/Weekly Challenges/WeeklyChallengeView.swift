@@ -16,6 +16,8 @@ struct WeeklyChallengeView: View {
     @State private var showHalfwayChallenge = false
     @State private var showPropBetsAdmin = false
     @State private var showPhotoAdmin = false
+    @State private var showPhotoGrader = false
+    @State private var showScavengerAdmin = false
 
     private var isOwnerAccount: Bool {
         let role = session.profile?.role ?? ""
@@ -175,6 +177,20 @@ struct WeeklyChallengeView: View {
                     PhotoChallengeAdminView(challenge: challenge)
                 } else {
                     Text("No active challenge.").navigationTitle("Photo Winners")
+                }
+            }
+            .navigationDestination(isPresented: $showPhotoGrader) {
+                if let challenge = challengeManager.currentChallenge {
+                    PhotoChallengeGraderView(challenge: challenge)
+                } else {
+                    Text("No active challenge.").navigationTitle("Grade Submissions")
+                }
+            }
+            .navigationDestination(isPresented: $showScavengerAdmin) {
+                if let challenge = challengeManager.currentChallenge {
+                    ScavengerHuntAdminView(challenge: challenge)
+                } else {
+                    Text("No active challenge.").navigationTitle("Grade Hunt")
                 }
             }
     }
@@ -380,9 +396,29 @@ struct WeeklyChallengeView: View {
 
             if challenge.type == .photo_challenge {
                 Button {
+                    showPhotoGrader = true
+                } label: {
+                    Label("Grade Submissions", systemImage: "checkmark.seal")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+
+                Button {
                     showPhotoAdmin = true
                 } label: {
                     Label("Select Photo Winners", systemImage: "trophy")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+            }
+
+            if challenge.type == .scavenger_hunt {
+                Button {
+                    showScavengerAdmin = true
+                } label: {
+                    Label("Grade Submissions", systemImage: "checkmark.seal")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)

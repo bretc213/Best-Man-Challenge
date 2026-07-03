@@ -85,13 +85,17 @@ struct BestManChallengeApp: App {
         await WeeklyChallengeSeeder2026W25.seedIfNeeded()  // Halfway Point Challenge (5 mini-games, 30 pts)
         await WeeklyChallengeSeeder2026W26.seedIfNeeded()  // July 4th Photo Challenge ✅ Ready
         await WeeklyChallengeSeeder2026W27.seedIfNeeded()  // World Cup Final Props (Team A/B = TBD)
+        await WeeklyChallengeSeeder2026W29.seedIfNeeded()  // Bret & Amanda Scavenger Hunt
         await WeeklyChallengeSeeder2026W31.seedIfNeeded()
         await WeeklyChallengeSeeder2026W47.seedIfNeeded()
         await WeeklyChallengeSeeder2026W48.seedIfNeeded()
 
         await BackyardChallengePointsSeeder.seedIfNeeded()
 
+        // ✅ In-person events (re-runs on every launch to pick up date/content changes)
+        try? await InPersonEventsSeeder.seed()
+
         // await SoftballChallengeSeeder2026.seedIfNeeded()
-            
+
     }
 }
