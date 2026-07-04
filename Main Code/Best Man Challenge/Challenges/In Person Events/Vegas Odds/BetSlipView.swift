@@ -65,20 +65,25 @@ struct BetSlipView: View {
 
     // MARK: - Totals (Parlay using $100 stake)
 
-    private var parlayToWin: Double {
+    /// Combined decimal odds across all picks (product of each leg's decimal odds).
+    private var parlayDecimalProduct: Double {
         let decimals: [Double] = slip.odds.compactMap { s in
             guard let a = parseAmerican(s) else { return nil }
             return decimalOdds(from: a)
         }
-        guard decimals.count == slip.odds.count, !decimals.isEmpty else { return 0 }
-
-        let parlayDecimal = decimals.reduce(1.0, *)
-        let profit = (parlayStake * parlayDecimal) - parlayStake
-        return max(0, profit).rounded()
+        guard decimals.count == slip.odds.count, !decimals.isEmpty else { return 1 }
+        return decimals.reduce(1.0, *)
     }
 
+    /// Profit on the $100 parlay bonus (what you additionally win if all hit).
+    private var parlayToWin: Double {
+        max(0, (parlayStake * parlayDecimalProduct) - parlayStake).rounded()
+    }
+
+    /// Total collect = straight returns + full $100 parlay collect.
+    /// The $100 parlay stake is a bonus — not deducted from the bankroll.
     private var totalCollectWithParlay: Double {
-        straightToCollect + parlayToWin
+        straightToCollect + (parlayStake * parlayDecimalProduct)
     }
 
     // MARK: - View
@@ -114,7 +119,7 @@ struct BetSlipView: View {
                 Text("TO WIN:        $\(String(format: "%.0f", straightToWin))")
                 Text("TO COLLECT:    $\(String(format: "%.0f", straightToCollect))")
 
-                Text("PARLAY WIN:   $\(String(format: "%.0f", parlayToWin))")
+                Text("PARLAY BONUS: +$\(String(format: "%.0f", parlayToWin))")
                 Text("TOTAL COLLECT:$\(String(format: "%.0f", totalCollectWithParlay))")
             }
             .font(.system(.body, design: .monospaced))

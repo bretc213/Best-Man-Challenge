@@ -268,14 +268,18 @@ struct WeeklyChallengeView: View {
                 }
 
                 if challenge.type == .prop_bets {
-                    Button { showPropBets = true } label: {
-                        Text(propBetsButtonTitle(for: challenge)).frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
+                    if challenge.is_active == false && !locked {
+                        propsComingSoonCard(challenge)
+                    } else {
+                        Button { showPropBets = true } label: {
+                            Text(propBetsButtonTitle(for: challenge)).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
 
-                    Text(locked ? "Picks are locked." : "You can change picks any time before kickoff.")
-                        .foregroundStyle(.secondary)
-                        .font(.footnote)
+                        Text(locked ? "Picks are locked." : "You can change picks any time before kickoff.")
+                            .foregroundStyle(.secondary)
+                            .font(.footnote)
+                    }
                 }
 
                 if challenge.isWordle {
@@ -537,6 +541,31 @@ struct WeeklyChallengeView: View {
         .padding()
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func propsComingSoonCard(_ challenge: WeeklyChallenge) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.badge.fill")
+                    .foregroundStyle(Color(red: 0.82, green: 0.66, blue: 0.22))
+                Text("Props Dropping Soon")
+                    .font(.headline)
+                    .foregroundStyle(Color(red: 0.82, green: 0.66, blue: 0.22))
+            }
+            Text(challenge.description)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text("Stay tuned — picks will open once the props are set.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(Color(red: 0.82, green: 0.66, blue: 0.22).opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color(red: 0.82, green: 0.66, blue: 0.22).opacity(0.3), lineWidth: 1)
+        )
     }
 
     private var noSubmissionCard: some View {

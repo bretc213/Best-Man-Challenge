@@ -82,18 +82,18 @@ for doc in oddsSnap.documents {
 
             var payoutTotal = payoutSingles
 
-            // If all 3 hit, pay as a parlay based on combined decimal odds.
+            // If all 3 hit, add a $betPerPick parlay bonus on top of straight payouts.
+            // Stake for the parlay is always betPerPick ($100), not totalWager ($300).
+            // Payout is ADDITIVE: you keep straight winnings AND collect the parlay.
             if parlayHit {
-                let legs = bet.picks.map { pid -> Double in
+                let legs: [Double] = bet.picks.map { pid in
                     let pRaw = probByPlayer[pid] ?? 0.25
                     let p = clampProbability(pRaw)
                     return OddsMath.decimalOdds(fromProbability: p)
                 }
                 let parlayDecimal = legs.reduce(1.0, *)
-                let payoutParlay = totalWager * parlayDecimal
-
-                // Choose the better payout (prevents double-counting and feels user-friendly)
-                payoutTotal = max(payoutSingles, payoutParlay)
+                let parlayCollect = Double(event.betPerPick) * parlayDecimal
+                payoutTotal = payoutSingles + parlayCollect
             }
 
             let netProfit = payoutTotal - totalWager

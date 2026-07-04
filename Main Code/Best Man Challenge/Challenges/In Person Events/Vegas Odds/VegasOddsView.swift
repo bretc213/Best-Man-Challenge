@@ -2,272 +2,185 @@
 //  VegasOddsView.swift
 //  Best Man Challenge
 //
-//  NOTE
-//  - Keeps the existing flow that drives your casino-ticket UI
-//    (PreBetSlipView + BetSlipView + BetSlip model).
-//  - Uses Firestore-driven events + probability-based odds.
-//  - Entire screen scrolls (no nested ScrollView).
+//  Sportsbook tab — event picker, player selection, finalized slip display.
 //
 
 import SwiftUI
 import FirebaseAuth
 
 struct VegasOddsView: View {
-    @Binding var allSlips: [BetSlip] // kept for compatibility
+    @Binding var allSlips: [BetSlip]
 
-    // ✅ Allows VegasOddsHomeView to call `VegasOddsView()` with no binding.
     init() { self._allSlips = .constant([]) }
     init(allSlips: Binding<[BetSlip]>) { self._allSlips = allSlips }
 
-    @StateObject private var playersStore = PlayersStore()
-    @StateObject private var eventsStore = VegasOddsEventsStore()
-    @StateObject private var linesStore = VegasOddsLinesStore()
-    @StateObject private var myBetStore = VegasOddsMyBetStore()
-    @StateObject private var bankrollStore = VegasOddsBankrollStore()
-    @StateObject private var currentUserStore = VegasOddsCurrentUserStore()
+    @StateObject private var playersStore      = PlayersStore()
+    @StateObject private var eventsStore       = VegasOddsEventsStore()
+    @StateObject private var linesStore        = VegasOddsLinesStore()
+    @StateObject private var myBetStore        = VegasOddsMyBetStore()
+    @StateObject private var bankrollStore     = VegasOddsBankrollStore()
+    @StateObject private var currentUserStore  = VegasOddsCurrentUserStore()
 
     @State private var selectedEventId: String? = nil
     @State private var selectedPlayerIds: Set<String> = []
 
     @State private var lastSlip: BetSlip? = nil
-    @State private var showAllSlips: Bool = false
-    @State private var showPreSlip: Bool = false
-    @State private var navigateToSlip: Bool = false
+    @State private var showPreSlip      = false
+    @State private var navigateToSlip   = false
     @State private var pendingSlip: BetSlip? = nil
 
     @State private var showLoadErrorAlert = false
-    @State private var loadErrorMessage = ""
+    @State private var loadErrorMessage   = ""
+
+    // MARK: - Derived state
 
     private var selectedEvent: VegasOddsEvent? {
         guard let id = selectedEventId else { return nil }
         return eventsStore.events.first(where: { $0.id == id })
     }
 
-    /// Firebase Auth UID (not the same as player.id in many setups)
-    private var bettorUid: String {
-        Auth.auth().currentUser?.uid ?? ""
-    }
-
-    private var maxSelections: Int { selectedEvent?.maxPicks ?? 3 }
-    private var betPerPick: Int { selectedEvent?.betPerPick ?? 100 }
+    private var maxSelections: Int { selectedEvent?.maxPicks  ?? 3 }
+    private var betPerPick:    Int { selectedEvent?.betPerPick ?? 100 }
     private var totalBetAmount: Int { selectedPlayerIds.count * betPerPick }
-
     private var betAlreadyPlaced: Bool { myBetStore.betAlreadyPlaced }
+    private var myPlayerId: String? { currentUserStore.linkedPlayerId }
 
-    private var selectedPlayers: [FirestorePlayer] {
-        playersStore.players.filter { selectedPlayerIds.contains($0.id) }
-    }
+    private var isFinalized: Bool { selectedEvent?.status == "finalized" }
+    private var isOpen:      Bool { selectedEvent?.status == "open" }
 
-    private var selectedDisplayNames: [String] {
-        selectedPlayers.map { $0.displayName }
-    }
-
-    private var selectedOdds: [String] {
-        selectedPlayers.map { linesStore.oddsString(for: $0.id) ?? "+100" }
-    }
+    private var selectedPlayers:      [FirestorePlayer] { playersStore.players.filter { selectedPlayerIds.contains($0.id) } }
+    private var selectedDisplayNames: [String]          { selectedPlayers.map { $0.displayName } }
+    private var selectedOdds:         [String]          { selectedPlayers.map { linesStore.oddsString(for: $0.id) ?? "+100" } }
 
     private var canPreviewSlip: Bool {
         guard let event = selectedEvent else { return false }
-        return selectedPlayerIds.count == event.maxPicks && !betAlreadyPlaced
+        return selectedPlayerIds.count == event.maxPicks
+            && !betAlreadyPlaced
+            && event.status == "open"
     }
 
-    // MARK: - Self-bet protection (the important part)
+    // MARK: - Auto-event selection
 
-    /// Tries to read a UID-like field off FirestorePlayer without assuming it exists at compile time.
-    /// This avoids "no member 'userId'" type compile errors.
-    private func authUidFromPlayer(_ p: FirestorePlayer) -> String? {
-        let m = Mirror(reflecting: p)
-        // common field names
-        for key in ["uid", "userId", "authUid", "firebaseUid", "linkedUserId"] {
-            if let v = m.descendant(key) as? String, !v.isEmpty {
-                return v
+    /// Returns the id of the most relevant event to open on load:
+    /// prefers the open event whose startsAt is nearest (future first, then past),
+    /// then locked, then the list's first element.
+    private func autoSelectEventId(from events: [VegasOddsEvent]) -> String? {
+        let now = Date()
+
+        let open = events.filter { $0.status == "open" }
+        if !open.isEmpty {
+            let sorted = open.sorted { a, b in
+                let da = (a.startsAt ?? .distantFuture).timeIntervalSince(now)
+                let db = (b.startsAt ?? .distantFuture).timeIntervalSince(now)
+                if da >= 0 && db >= 0 { return da < db }   // both future → nearest first
+                if da < 0  && db < 0  { return da > db }   // both past   → most recent first
+                return da >= 0                              // future beats past
             }
+            return sorted.first?.id
         }
-        return nil
-    }
 
-    /// The player document id that represents the signed-in user (if we can infer it).
-    ///
-    /// Works for both patterns:
-    /// - players/{uid} (player.id == auth uid)
-    /// - players/{playerId} with a stored uid field (player.uid / player.userId / etc)
-    private var myPlayerId: String? {
-        currentUserStore.linkedPlayerId
+        if let locked = events.first(where: { $0.status == "locked" }) { return locked.id }
+        return events.first?.id
     }
 
     // MARK: - Parlay math
 
-    /// Profit (not total collect) for the current selection using parlay decimal odds.
-    private var computedParlayToWin: Int {
-        guard betPerPick > 0 else { return 0 }
-        let pickIds = Array(selectedPlayerIds)
-        let dec = parlayDecimalOdds(for: pickIds)
-
-        // Parlay stake is ONE pick cost ($100), not $300
-        let stake = Double(betPerPick)
-
-        let profit = max(0, (stake * dec) - stake)
-        return Int(round(profit))
+    private func parlayDecimalOdds(for pickIds: [String]) -> Double {
+        pickIds.map { linesStore.decimalOdds(for: $0) ?? 2.0 }.reduce(1.0, *)
     }
 
-    private func parlayDecimalOdds(for pickIds: [String]) -> Double {
-        // If any line missing, treat as +100 (decimal 2.0)
-        let decimals: [Double] = pickIds.map { pid in
-            if let d = linesStore.decimalOdds(for: pid) { return d }
-            return 2.0
-        }
-        return decimals.reduce(1.0, *)
+    private var computedParlayBonus: Int {
+        guard betPerPick > 0, !selectedPlayerIds.isEmpty else { return 0 }
+        let dec = parlayDecimalOdds(for: Array(selectedPlayerIds))
+        return Int(round(max(0, Double(betPerPick) * dec - Double(betPerPick))))
     }
 
     private var mySavedSlip: BetSlip? {
         guard let bet = myBetStore.myBet else { return nil }
-        let wager = bet.betPerPick * max(bet.picks.count, 1)
-
-        let dec = parlayDecimalOdds(for: bet.picks)
-
-        // Parlay is always based on ONE pick cost
-        let stake = Double(bet.betPerPick)
-
-        let profit = max(0, (stake * dec) - stake)
-        let toWin = Int(round(profit))
-
-        let names = bet.pickDisplayNames.isEmpty ? bet.picks : bet.pickDisplayNames
-        let odds = bet.oddsStrings.isEmpty ? Array(repeating: "+100", count: names.count) : bet.oddsStrings
-
+        let wager  = bet.betPerPick * max(bet.picks.count, 1)
+        let dec    = parlayDecimalOdds(for: bet.picks)
+        let toWin  = Int(round(max(0, Double(bet.betPerPick) * dec - Double(bet.betPerPick))))
+        let names  = bet.pickDisplayNames.isEmpty ? bet.picks : bet.pickDisplayNames
+        let odds   = bet.oddsStrings.isEmpty ? Array(repeating: "+100", count: names.count) : bet.oddsStrings
         return BetSlip(
-            challenge: bet.eventName.isEmpty ? (selectedEvent?.name ?? "Vegas Odds") : bet.eventName,
+            challenge:       bet.eventName.isEmpty ? (selectedEvent?.name ?? "Vegas Odds") : bet.eventName,
             selectedPlayers: names,
-            odds: odds,
-            betAmount: wager,
-            toWin: toWin,
-            timestamp: bet.createdAt ?? Date()
+            odds:            odds,
+            betAmount:       wager,
+            toWin:           toWin,
+            timestamp:       bet.createdAt ?? Date()
         )
     }
 
     // MARK: - Body
 
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
+        ScrollView {
+            VStack(spacing: 18) {
+                if eventsStore.events.isEmpty {
+                    ProgressView("Loading…").frame(maxWidth: .infinity, minHeight: 200)
 
-                    // Top row actions
-                    HStack(spacing: 12) {
-                        Button("View All Bet Slips") {
-                            showAllSlips = true
-                        }
-                        .sheet(isPresented: $showAllSlips) {
-                            VegasOddsLeaderboardView()
-                        }
+                } else {
 
-                        Spacer()
-
-                        NavigationLink {
-                            VegasOddsAdminView(eventsStore: eventsStore)
-                        } label: {
-                            Text("Admin")
-                                .font(.footnote.bold())
-                                .foregroundColor(.secondary)
-                        }
+                    // Event picker — only shown when multiple events exist
+                    if eventsStore.events.count > 1 {
+                        eventPicker
                     }
 
-                    infoBar
+                    if let event = selectedEvent {
 
-                    Text("Select Event")
-                        .font(.headline)
+                        if isFinalized {
+                            // ─── Finalized: show settled slip ───
+                            eventStatusBadge(event.status)
+                            VegasOddsSettledSlipView(
+                                bet: myBetStore.myBet,
+                                eventName: event.name,
+                                betPerPick: event.betPerPick
+                            )
 
-                    Picker("Select Event", selection: Binding(
-                        get: { selectedEventId ?? eventsStore.events.first?.id },
-                        set: { newValue in
-                            selectedEventId = newValue
-                            selectedPlayerIds.removeAll()
-                            if let id = newValue {
-                                linesStore.startListening(eventId: id)
-                                myBetStore.startListening(eventId: id)
-                                bankrollStore.startListening(eventId: id)
-                            }
-                        }
-                    )) {
-                        ForEach(eventsStore.events, id: \.id) { e in
-                            Text(e.name).tag(Optional(e.id))
+                        } else {
+                            // ─── Open / Locked: normal betting UI ───
+                            eventStatusBadge(event.status)
+                            infoBar
+                            Text("Pick \(maxSelections) Players  •  $\(betPerPick) each")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            playersList
+                            statusText
+                            betButton
                         }
                     }
-                    .pickerStyle(MenuPickerStyle())
-
-                    Text("Select \(maxSelections) Players ($\(betPerPick) each)")
-                        .font(.headline)
-
-                    playersList
-
-                    statusText
-
-                    Button(betAlreadyPlaced ? "View My Bet Slip" : "View Bet Slip") {
-                        if betAlreadyPlaced {
-                            if let slip = mySavedSlip {
-                                lastSlip = slip
-                                navigateToSlip = true
-                            }
-                            return
-                        }
-
-                        guard let event = selectedEvent else { return }
-
-                        let slip = BetSlip(
-                            challenge: event.name,
-                            selectedPlayers: selectedDisplayNames,
-                            odds: selectedOdds,
-                            betAmount: totalBetAmount,
-                            toWin: computedParlayToWin,
-                            timestamp: Date()
-                        )
-
-                        pendingSlip = slip
-                        showPreSlip = true
-                    }
-                    .disabled(betAlreadyPlaced ? (mySavedSlip == nil) : (!canPreviewSlip))
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background((betAlreadyPlaced ? (mySavedSlip != nil) : canPreviewSlip) ? Color.blue : Color.gray)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
-
-                    NavigationLink(
-                        destination: Group {
-                            if let slip = lastSlip {
-                                BetSlipView(slip: slip)
-                            }
-                        },
-                        isActive: $navigateToSlip
-                    ) {
-                        EmptyView()
-                    }
-                    .hidden()
-                }
-                .padding()
-            }
-            .navigationTitle("Vegas Odds")
-            .sheet(isPresented: $showPreSlip) {
-                if let slip = pendingSlip, let _ = selectedEvent, let eventId = selectedEventId {
-                    PreBetSlipView(
-                        challengeId: eventId,
-                        challengeTitle: slip.challenge,
-                        playerDisplayNames: slip.selectedPlayers,
-                        playerIds: Array(selectedPlayerIds),
-                        odds: slip.odds,
-                        betAmount: slip.betAmount,
-                        cancelAction: {
-                            showPreSlip = false
-                        },
-                        onConfirmed: {
-                            allSlips.append(slip)
-                            lastSlip = slip
-                            selectedPlayerIds.removeAll()
-                            showPreSlip = false
-                            navigateToSlip = true
-                        }
-                    )
                 }
             }
+            .padding()
+        }
+        .navigationTitle("Sportsbook")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showPreSlip) {
+            if let slip = pendingSlip, let eventId = selectedEventId {
+                PreBetSlipView(
+                    challengeId: eventId,
+                    challengeTitle: slip.challenge,
+                    playerDisplayNames: slip.selectedPlayers,
+                    playerIds: Array(selectedPlayerIds),
+                    odds: slip.odds,
+                    betAmount: slip.betAmount,
+                    cancelAction: { showPreSlip = false },
+                    onConfirmed: {
+                        allSlips.append(slip)
+                        lastSlip = slip
+                        selectedPlayerIds.removeAll()
+                        showPreSlip = false
+                        navigateToSlip = true
+                    }
+                )
+            }
+        }
+        .background {
+            NavigationLink(
+                destination: Group { if let slip = lastSlip { BetSlipView(slip: slip) } },
+                isActive: $navigateToSlip
+            ) { EmptyView() }
         }
         .alert("Heads up", isPresented: $showLoadErrorAlert) {
             Button("OK", role: .cancel) { }
@@ -278,178 +191,208 @@ struct VegasOddsView: View {
             playersStore.startListening()
             eventsStore.startListening()
             currentUserStore.startListening()
-            // NOTE: sub-listeners (lines/bets/bankroll) are started in
-            // onChange(of: eventsStore.events) below, once data actually arrives.
         }
         .onChange(of: eventsStore.events) { events in
-            // Auto-select first event the first time events load, then start sub-listeners.
-            // This is the only reliable place to do it — onAppear fires before Firestore
-            // returns data, so eventsStore.events is always empty there.
-            guard selectedEventId == nil, let firstId = events.first?.id else { return }
+            // Auto-select on first load only
+            guard selectedEventId == nil, let firstId = autoSelectEventId(from: events) else { return }
             selectedEventId = firstId
-            linesStore.startListening(eventId: firstId)
-            myBetStore.startListening(eventId: firstId)
-            bankrollStore.startListening(eventId: firstId)
+            startSubListeners(for: firstId)
         }
-        .onChange(of: eventsStore.errorMessage) { msg in
-            if let msg {
-                loadErrorMessage = "Events couldn’t load: \(msg)"
-                showLoadErrorAlert = true
-            }
-        }
-        .onChange(of: playersStore.errorMessage) { msg in
-            if let msg {
-                loadErrorMessage = "Players couldn’t load: \(msg)"
-                showLoadErrorAlert = true
-            }
-        }
-        .onChange(of: linesStore.errorMessage) { msg in
-            if let msg {
-                loadErrorMessage = "Odds couldn’t load: \(msg)"
-                showLoadErrorAlert = true
-            }
-        }
-        .onChange(of: myBetStore.errorMessage) { msg in
-            if let msg {
-                loadErrorMessage = "Bet status error: \(msg)"
-                showLoadErrorAlert = true
-            }
-        }
-        .onChange(of: bankrollStore.errorMessage) { msg in
-            if let msg {
-                loadErrorMessage = "Bankroll error: \(msg)"
-                showLoadErrorAlert = true
-            }
-        }
+        .onChange(of: eventsStore.errorMessage)   { if let m = $0 { showError("Events: \(m)") } }
+        .onChange(of: playersStore.errorMessage)  { if let m = $0 { showError("Players: \(m)") } }
+        .onChange(of: linesStore.errorMessage)    { if let m = $0 { showError("Odds: \(m)") } }
+        .onChange(of: myBetStore.errorMessage)    { if let m = $0 { showError("Bet status: \(m)") } }
+        .onChange(of: bankrollStore.errorMessage) { if let m = $0 { showError("Bankroll: \(m)") } }
     }
 
     // MARK: - Subviews
 
+    private var eventPicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("EVENT")
+                .font(.caption.bold())
+                .foregroundColor(.secondary)
+            Picker("Select Event", selection: Binding(
+                get: { selectedEventId ?? eventsStore.events.first?.id },
+                set: { newValue in
+                    selectedEventId = newValue
+                    selectedPlayerIds.removeAll()
+                    if let id = newValue { startSubListeners(for: id) }
+                }
+            )) {
+                ForEach(eventsStore.events, id: \.id) { e in
+                    Text(e.name).tag(Optional(e.id))
+                }
+            }
+            .pickerStyle(MenuPickerStyle())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func eventStatusBadge(_ status: String) -> some View {
+        HStack {
+            Spacer()
+            switch status {
+            case "locked":
+                Label("Betting Locked", systemImage: "lock.fill")
+                    .font(.caption.bold()).foregroundColor(.orange)
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(Color.orange.opacity(0.15)).cornerRadius(8)
+            case "finalized":
+                Label("Event Finalized", systemImage: "checkmark.seal.fill")
+                    .font(.caption.bold()).foregroundColor(.green)
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(Color.green.opacity(0.15)).cornerRadius(8)
+            default:
+                Label("Open for Bets", systemImage: "circle.fill")
+                    .font(.caption.bold()).foregroundColor(.blue)
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(Color.blue.opacity(0.12)).cornerRadius(8)
+            }
+            Spacer()
+        }
+    }
+
     private var infoBar: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             HStack {
-                Text("Bankroll:")
-                    .foregroundColor(.secondary)
+                Text("Bankroll").foregroundColor(.secondary)
                 Spacer()
-                Text("$\(bankrollStore.balance ?? 300)")
-                    .bold()
+                Text("$\(bankrollStore.balance ?? 300)").bold()
             }
-
             HStack {
-                Text("Pick cost:")
-                    .foregroundColor(.secondary)
+                Text("Pick cost").foregroundColor(.secondary)
                 Spacer()
-                Text("$\(betPerPick) each")
-                    .bold()
+                Text("$\(betPerPick) each").bold()
             }
-
             HStack {
-                Text("Total wager:")
-                    .foregroundColor(.secondary)
+                Text("Total wager").foregroundColor(.secondary)
                 Spacer()
-                Text("$\(totalBetAmount)")
-                    .bold()
+                Text("$\(totalBetAmount)").bold()
             }
-
-            HStack {
-                Text("Event:")
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text(selectedEvent?.name ?? "—")
-                    .bold()
-            }
-
             if !selectedPlayerIds.isEmpty {
-                Divider().opacity(0.2)
+                Divider().opacity(0.3)
                 HStack {
-                    Text("Parlay to win:")
-                        .foregroundColor(.secondary)
+                    Text("Parlay bonus (if all hit)").foregroundColor(.secondary)
                     Spacer()
-                    Text("$\(computedParlayToWin)")
-                        .bold()
+                    Text("+$\(computedParlayBonus)").bold().foregroundColor(.green)
                 }
             }
         }
         .padding()
-        .background(Color.gray.opacity(0.15))
-        .cornerRadius(10)
+        .background(Color.gray.opacity(0.12))
+        .cornerRadius(12)
     }
 
     private var playersList: some View {
-        LazyVStack(alignment: .leading, spacing: 10) {
-
-            let sortedPlayers = playersStore.players.sorted { a, b in
-                let pa = linesStore.linesByPlayerId[a.id]?.top3Probability ?? 0
-                let pb = linesStore.linesByPlayerId[b.id]?.top3Probability ?? 0
-                return pa > pb
+        LazyVStack(spacing: 8) {
+            let sorted = playersStore.players.sorted {
+                (linesStore.linesByPlayerId[$0.id]?.top3Probability ?? 0)
+                > (linesStore.linesByPlayerId[$1.id]?.top3Probability ?? 0)
             }
-
-            ForEach(sortedPlayers) { player in
+            ForEach(sorted) { player in
                 let isSelected = selectedPlayerIds.contains(player.id)
-                let odds = linesStore.oddsString(for: player.id) ?? "+100"
-                let isSelf = (player.id == myPlayerId)
+                let odds   = linesStore.oddsString(for: player.id) ?? "+100"
+                let isSelf = player.id == myPlayerId
 
-                Button {
-                    toggleSelection(for: player.id)
-                } label: {
+                Button { toggleSelection(for: player.id) } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(player.displayName + (isSelf ? " (you)" : ""))
+                                .font(.subheadline)
                                 .foregroundColor(isSelf ? .gray : .primary)
-
                             Text(odds)
                                 .font(.caption)
                                 .foregroundColor(isSelf ? .gray : .secondary)
                         }
-
                         Spacer()
-
                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                             .foregroundColor(isSelf ? .gray : (isSelected ? .green : .blue))
                             .font(.system(size: 22))
                     }
                     .contentShape(Rectangle())
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 10)
-                    .background(Color.gray.opacity(isSelf ? 0.06 : 0.12))
+                    .padding(.vertical, 10).padding(.horizontal, 12)
+                    .background(isSelected ? Color.blue.opacity(0.10) : Color.gray.opacity(isSelf ? 0.05 : 0.10))
                     .cornerRadius(10)
-                    .opacity(isSelf ? 0.55 : 1.0)
+                    .overlay(RoundedRectangle(cornerRadius: 10)
+                        .stroke(isSelected ? Color.blue.opacity(0.35) : Color.clear, lineWidth: 1.5))
+                    .opacity(isSelf ? 0.5 : 1.0)
                 }
                 .buttonStyle(.plain)
-                .disabled(isSelf || (!isSelected && (selectedPlayerIds.count >= maxSelections || betAlreadyPlaced)))
+                .disabled(isSelf || (!isSelected && (selectedPlayerIds.count >= maxSelections || betAlreadyPlaced || !isOpen)))
             }
         }
-        .padding(.bottom, 10)
     }
 
     @ViewBuilder
     private var statusText: some View {
-        let selfId = myPlayerId ?? ""
-
         if betAlreadyPlaced {
-            Text("You’ve already placed a bet on this event.")
-                .font(.caption)
-                .foregroundColor(.red)
+            Text("You've already placed a bet on this event.")
+                .font(.caption).foregroundColor(.orange)
+                .frame(maxWidth: .infinity, alignment: .center)
         } else if let me = myPlayerId, selectedPlayerIds.contains(me) {
-            Text("You can’t bet on yourself.")
-                .font(.caption)
-                .foregroundColor(.red)
+            Text("You can't bet on yourself.")
+                .font(.caption).foregroundColor(.red)
+                .frame(maxWidth: .infinity, alignment: .center)
+        } else if selectedEvent?.status == "locked" {
+            Text("Betting is closed for this event.")
+                .font(.caption).foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
+    }
+
+    private var betButton: some View {
+        Button(betAlreadyPlaced ? "View My Bet Slip" : "Place Bet") {
+            if betAlreadyPlaced {
+                if let slip = mySavedSlip { lastSlip = slip; navigateToSlip = true }
+                return
+            }
+            guard let event = selectedEvent else { return }
+            let slip = BetSlip(
+                challenge: event.name,
+                selectedPlayers: selectedDisplayNames,
+                odds: selectedOdds,
+                betAmount: totalBetAmount,
+                toWin: computedParlayBonus,
+                timestamp: Date()
+            )
+            pendingSlip = slip
+            showPreSlip = true
+        }
+        .disabled(betAlreadyPlaced ? mySavedSlip == nil : !canPreviewSlip)
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background((betAlreadyPlaced ? mySavedSlip != nil : canPreviewSlip) ? Color.blue : Color.gray)
+        .foregroundColor(.white)
+        .cornerRadius(12)
     }
 
     // MARK: - Helpers
 
-    private func toggleSelection(for playerId: String) {
-        if let me = myPlayerId, playerId == me { return } // ✅ cannot bet on yourself
+    private func startSubListeners(for eventId: String) {
+        linesStore.startListening(eventId: eventId)
+        myBetStore.startListening(eventId: eventId)
+        bankrollStore.startListening(eventId: eventId)
+    }
 
+    private func toggleSelection(for playerId: String) {
+        if let me = myPlayerId, playerId == me { return }
         if selectedPlayerIds.contains(playerId) {
             selectedPlayerIds.remove(playerId)
         } else if selectedPlayerIds.count < maxSelections && !betAlreadyPlaced {
             selectedPlayerIds.insert(playerId)
         }
     }
+
+    private func showError(_ msg: String) {
+        loadErrorMessage = msg
+        showLoadErrorAlert = true
+    }
 }
 
 #Preview {
-    VegasOddsView(allSlips: .constant([]))
+    NavigationStack {
+        VegasOddsView()
+    }
 }

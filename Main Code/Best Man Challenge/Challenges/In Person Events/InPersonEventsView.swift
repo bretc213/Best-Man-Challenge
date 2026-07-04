@@ -88,7 +88,7 @@ struct InPersonEventsView: View {
                 .navigationDestination(for: EventType.self) { event in
                     switch event {
                     case .vegasOdds:
-                        VegasOddsHomeView()
+                        VegasOddsRootView()
                     case .pokerNight:
                         PokerNightView(eventId: pokerNightEventId)
                     case .backyardChallenge:

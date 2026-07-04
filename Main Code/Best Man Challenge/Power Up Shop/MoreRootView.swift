@@ -40,6 +40,17 @@ struct MoreRootView: View {
                         } label: {
                             hubRow(title: "Weekly Challenge Preview", subtitle: "Preview and test upcoming challenges", systemImage: "play.rectangle.fill")
                         }
+
+                        NavigationLink {
+                            MurderMysteryRootView()
+                                .environmentObject(session)
+                        } label: {
+                            hubRow(
+                                title: "Murder Mystery — Admin",
+                                subtitle: "Dead in the Dust · Test & preview mode",
+                                systemImage: "magnifyingglass.circle.fill"
+                            )
+                        }
                     } header: {
                         Text("Admin")
                             .font(.caption.bold())

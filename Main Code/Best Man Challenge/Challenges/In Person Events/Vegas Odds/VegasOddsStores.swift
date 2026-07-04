@@ -311,7 +311,6 @@ final class VegasOddsHistoryStore: ObservableObject {
 
         let db = Firestore.firestore()
         // Query by bettorPlayerId (player doc ID) — NOT bettorId (auth UID).
-        // The leaderboard passes player IDs, and bet docs store the player ID in bettorPlayerId.
         listener = db.collection("vegas_odds_bets")
             .whereField("bettorPlayerId", isEqualTo: bettorId)
             .addSnapshotListener { [weak self] snap, err in
@@ -334,5 +333,49 @@ final class VegasOddsHistoryStore: ObservableObject {
     func stopListening() {
         listener?.remove()
         listener = nil
+    }
+}
+
+// MARK: - All bets for a specific event (used by Past Slips)
+
+@MainActor
+final class VegasOddsAllBetsForEventStore: ObservableObject {
+    @Published var bets: [VegasOddsBet] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String? = nil
+
+    private var listener: ListenerRegistration?
+
+    func startListening(eventId: String) {
+        stopListening()
+        isLoading = true
+        errorMessage = nil
+
+        let db = Firestore.firestore()
+        listener = db.collection("vegas_odds_bets")
+            .whereField("eventId", isEqualTo: eventId)
+            .addSnapshotListener { [weak self] snap, err in
+                guard let self else { return }
+                if let err {
+                    Task { @MainActor in
+                        self.errorMessage = err.localizedDescription
+                        self.isLoading = false
+                    }
+                    return
+                }
+                let mapped = (snap?.documents ?? []).map {
+                    VegasOddsBet(id: $0.documentID, data: $0.data())
+                }
+                Task { @MainActor in
+                    self.bets = mapped
+                    self.isLoading = false
+                }
+            }
+    }
+
+    func stopListening() {
+        listener?.remove()
+        listener = nil
+        isLoading = false
     }
 }
