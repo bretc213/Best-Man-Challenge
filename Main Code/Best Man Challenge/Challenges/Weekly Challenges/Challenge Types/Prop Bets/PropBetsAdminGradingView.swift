@@ -59,7 +59,7 @@ struct PropBetsAdminGradingView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
-                    .disabled(vm.isGrading || vm.props.filter { $0.correctOptionId != nil }.isEmpty)
+                    .disabled(vm.isGrading)
                     .padding(.horizontal)
 
                     Text("Scores every player's picks against the answers you've set above. Safe to re-run.")
@@ -91,7 +91,11 @@ struct PropBetsAdminGradingView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             let answered = vm.props.filter { $0.correctOptionId != nil }.count
-            Text("This will score all player picks against the \(answered) prop(s) you've answered. You can re-run anytime.")
+            if answered == 0 {
+                Text("No answers set — this will reset all scores to 0. You can re-run anytime.")
+            } else {
+                Text("This will score all player picks against the \(answered) prop(s) you've answered. You can re-run anytime.")
+            }
         }
     }
 
@@ -186,6 +190,7 @@ struct AdminPropBet: Identifiable {
     let position: Int
     let kind: String
     let prompt: String
+    let market: String?
     let line: Double?
     let options: [AdminPropOption]
     var correctOptionId: String?
@@ -249,6 +254,7 @@ final class PropBetsAdminGradingVM: ObservableObject {
                         position: d["position"] as? Int ?? 0,
                         kind: d["kind"] as? String ?? "multiple_choice",
                         prompt: prompt,
+                        market: d["market"] as? String,
                         line: line,
                         options: options,
                         correctOptionId: d["correct_option_id"] as? String ?? d["correctOptionId"] as? String
@@ -257,20 +263,34 @@ final class PropBetsAdminGradingVM: ObservableObject {
             }
     }
 
-    // MARK: - Set correct option
+    // MARK: - Set correct option (tap again to deselect)
 
     func setCorrectOption(challengeId: String, propId: String, optionId: String) async {
         savingPropId = propId
         defer { savingPropId = nil }
 
+        let current = props.first(where: { $0.id == propId })?.correctOptionId
+        let isDeselect = current == optionId
+
         do {
-            try await db.collection("weekly_challenges")
+            let propRef = db.collection("weekly_challenges")
                 .document(challengeId)
                 .collection("props")
                 .document(propId)
-                .setData(["correct_option_id": optionId, "updated_at": FieldValue.serverTimestamp()], merge: true)
 
-            setStatus("✅ Answer saved.", isError: false)
+            if isDeselect {
+                try await propRef.updateData([
+                    "correct_option_id": FieldValue.delete(),
+                    "updated_at": FieldValue.serverTimestamp()
+                ])
+                setStatus("↩️ Answer cleared.", isError: false)
+            } else {
+                try await propRef.setData(
+                    ["correct_option_id": optionId, "updated_at": FieldValue.serverTimestamp()],
+                    merge: true
+                )
+                setStatus("✅ Answer saved.", isError: false)
+            }
         } catch {
             setStatus("Save failed: \(error.localizedDescription)", isError: true)
         }
@@ -283,20 +303,23 @@ final class PropBetsAdminGradingVM: ObservableObject {
         gradingProgressMessage = "Loading props…"
         defer { isGrading = false; gradingProgressMessage = nil }
 
-        // Build answer key from props that have correct_option_id
-        let answerKey: [String: String] = props.reduce(into: [:]) { dict, prop in
-            if let correct = prop.correctOptionId { dict[prop.id] = correct }
+        // Build pool groups — same logic as PropBetsStore so scoring stays in sync.
+        // Group by (sorted option IDs) + (market base, split on " #").
+        // Groups of 2+ use pool scoring; singles use exact match.
+        var poolGroups: [String: [AdminPropBet]] = [:]
+        for prop in props {
+            let optionKey = prop.options.map(\.id).sorted().joined(separator: "|")
+            guard !optionKey.isEmpty else { continue }
+            let marketBase = prop.market?.components(separatedBy: " #").first ?? prop.market ?? ""
+            let groupKey = "\(optionKey)__\(marketBase)"
+            poolGroups[groupKey, default: []].append(prop)
         }
 
-        guard !answerKey.isEmpty else {
-            setStatus("⚠️ No props have been answered yet.", isError: true)
-            return
-        }
-
-        let maxScore = answerKey.count
+        // maxScore = total number of answered props (0 = reset run)
+        let answeredProps = props.filter { $0.correctOptionId != nil }
+        let maxScore = answeredProps.count
 
         do {
-            // Load all picks docs
             gradingProgressMessage = "Loading submissions…"
             let picksSnap = try await db.collection("weekly_challenges")
                 .document(challengeId)
@@ -316,18 +339,31 @@ final class PropBetsAdminGradingVM: ObservableObject {
                 let data = pickDoc.data()
                 let selections = data["selections"] as? [String: String] ?? [:]
 
-                // Compute score
+                // Pool-aware scoring
                 var score = 0
-                for (propId, correctOptionId) in answerKey {
-                    if selections[propId] == correctOptionId { score += 1 }
+                for (_, groupProps) in poolGroups {
+                    let graded = groupProps.filter { !($0.correctOptionId ?? "").isEmpty }
+                    guard !graded.isEmpty else { continue }
+
+                    if groupProps.count > 1 {
+                        // Pool group: +1 per correct player found anywhere in the user's picks
+                        let correctPool = Set(graded.compactMap { $0.correctOptionId })
+                        let userPicks = Set(groupProps.compactMap { selections[$0.id] })
+                        score += correctPool.filter { userPicks.contains($0) }.count
+                    } else if let prop = groupProps.first, let correct = prop.correctOptionId {
+                        // Single prop: exact match
+                        if selections[prop.id] == correct { score += 1 }
+                    }
                 }
 
-                // Look up linked_player_id
                 let linkedPlayerId = await fetchLinkedPlayerId(uid: uid)
+                var resolvedDisplayName: String? = nil
+                if let lp = linkedPlayerId {
+                    resolvedDisplayName = await fetchPlayerDisplayName(playerId: lp)
+                }
 
                 gradingProgressMessage = "Grading \(gradedCount + 1)/\(total)…"
 
-                // Write to submissions
                 var submissionData: [String: Any] = [
                     "uid": uid,
                     "score": score,
@@ -336,6 +372,7 @@ final class PropBetsAdminGradingVM: ObservableObject {
                     "updated_at": FieldValue.serverTimestamp()
                 ]
                 if let lp = linkedPlayerId { submissionData["linked_player_id"] = lp }
+                if let dn = resolvedDisplayName { submissionData["display_name"] = dn }
 
                 try await db.collection("weekly_challenges")
                     .document(challengeId)
@@ -360,6 +397,16 @@ final class PropBetsAdminGradingVM: ObservableObject {
             let snap = try await db.collection("users").document(uid).getDocument()
             let lp = snap.data()?["linked_player_id"] as? String
             return (lp?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+        } catch {
+            return nil
+        }
+    }
+
+    private func fetchPlayerDisplayName(playerId: String) async -> String? {
+        do {
+            let snap = try await db.collection("players").document(playerId).getDocument()
+            let name = snap.data()?["display_name"] as? String
+            return name.flatMap { $0.isEmpty ? nil : $0 }
         } catch {
             return nil
         }
