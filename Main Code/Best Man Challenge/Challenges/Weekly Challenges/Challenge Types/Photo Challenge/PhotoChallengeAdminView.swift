@@ -13,6 +13,50 @@
 
 import SwiftUI
 import FirebaseFirestore
+import FirebaseStorage
+import FirebaseAuth
+import PhotosUI
+
+// MARK: - Full-screen photo helpers
+
+struct IdentifiableURL: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+struct FullScreenPhotoView: View {
+    let url: URL
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .failure:
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                default:
+                    ProgressView()
+                }
+            }
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .padding()
+            }
+        }
+        .onTapGesture { dismiss() }
+    }
+}
 
 // MARK: - Root prompt list
 
@@ -111,6 +155,7 @@ struct PhotoPromptSubmissionsView: View {
 
     @State private var confirmingWinner: PhotoSubmission?
     @State private var savingUID: String?
+    @State private var fullScreenPhoto: IdentifiableURL?
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -156,6 +201,9 @@ struct PhotoPromptSubmissionsView: View {
         }
         .navigationTitle("\(prompt.emoji) \(prompt.label)")
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(item: $fullScreenPhoto) { item in
+            FullScreenPhotoView(url: item.url)
+        }
         .confirmationDialog(
             "Select Winner",
             isPresented: Binding(get: { confirmingWinner != nil }, set: { if !$0 { confirmingWinner = nil } }),
@@ -246,6 +294,11 @@ struct PhotoPromptSubmissionsView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isWinner ? Color.yellow : Color.clear, lineWidth: 3)
         )
+        .onTapGesture {
+            if let url = URL(string: entry.url) {
+                fullScreenPhoto = IdentifiableURL(url: url)
+            }
+        }
         .onLongPressGesture {
             confirmingWinner = sub
         }
@@ -383,6 +436,7 @@ struct PhotoChallengeGraderView: View {
     let challenge: WeeklyChallenge
 
     @StateObject private var vm = PhotoChallengeAdminVM()
+    @State private var showAdminSubmit = false
 
     private var config: WeeklyChallengePhotoConfig? { challenge.photo_challenge }
 
@@ -414,6 +468,18 @@ struct PhotoChallengeGraderView: View {
         }
         .navigationTitle("Grade Submissions — W\(challenge.week)")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showAdminSubmit = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+            }
+        }
+        .sheet(isPresented: $showAdminSubmit) {
+            AdminPhotoSubmitView(challenge: challenge, vm: vm)
+        }
         .task { vm.load(challengeId: challenge.id) }
         .onDisappear { vm.stop() }
         .alert("Error", isPresented: Binding(
@@ -465,6 +531,7 @@ struct PhotoPlayerGraderView: View {
     }
 
     @State private var confirmingPromptId: String?
+    @State private var fullScreenPhoto: IdentifiableURL?
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -506,6 +573,9 @@ struct PhotoPlayerGraderView: View {
         }
         .navigationTitle(live?.displayName ?? submission.uid)
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(item: $fullScreenPhoto) { item in
+            FullScreenPhotoView(url: item.url)
+        }
         .confirmationDialog(
             "Grade Photo",
             isPresented: Binding(
@@ -631,6 +701,11 @@ struct PhotoPlayerGraderView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(statusBorderColor(status), lineWidth: 3)
         )
+        .onTapGesture {
+            if let url = URL(string: entry.url) {
+                fullScreenPhoto = IdentifiableURL(url: url)
+            }
+        }
         .onLongPressGesture {
             confirmingPromptId = prompt.id
         }
@@ -679,6 +754,206 @@ extension PhotoChallengeAdminVM {
             await syncScore(challengeId: challengeId, uid: uid)
         } catch {
             errorMessage = "Failed to grade: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - Admin Submit on Behalf
+
+struct AdminPhotoSubmitView: View {
+    let challenge: WeeklyChallenge
+    @ObservedObject var vm: PhotoChallengeAdminVM
+    @Environment(\.dismiss) private var dismiss
+
+    private struct PlayerRecord: Identifiable {
+        let id: String          // Firebase UID
+        let linkedPlayerId: String
+        let displayName: String
+    }
+
+    @State private var players: [PlayerRecord] = []
+    @State private var selectedUID: String = ""
+    @State private var selectedPromptId: String = ""
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var isUploading = false
+    @State private var errorMessage: String?
+    @State private var successMessage: String?
+
+    private var prompts: [PhotoChallengePrompt] { challenge.photo_challenge?.prompts ?? [] }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Player") {
+                    if players.isEmpty {
+                        HStack {
+                            ProgressView().scaleEffect(0.7)
+                            Text("Loading players…").foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Picker("Select Player", selection: $selectedUID) {
+                            Text("Choose a player").tag("")
+                            ForEach(players) { player in
+                                Text(player.displayName).tag(player.id)
+                            }
+                        }
+                    }
+                }
+
+                Section("Prompt") {
+                    Picker("Select Prompt", selection: $selectedPromptId) {
+                        Text("Choose a prompt").tag("")
+                        ForEach(prompts) { prompt in
+                            Text("\(prompt.emoji) \(prompt.label)").tag(prompt.id)
+                        }
+                    }
+                }
+
+                Section("Photo") {
+                    PhotosPicker(selection: $selectedItem, matching: .images) {
+                        Label(
+                            selectedItem == nil ? "Select Photo" : "Photo Selected ✓",
+                            systemImage: "photo.badge.plus"
+                        )
+                    }
+                }
+
+                if let err = errorMessage {
+                    Section {
+                        Text(err).foregroundStyle(.red).font(.caption)
+                    }
+                }
+                if let suc = successMessage {
+                    Section {
+                        Text(suc).foregroundStyle(.green).font(.caption)
+                    }
+                }
+
+                Section {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        HStack {
+                            if isUploading {
+                                ProgressView().scaleEffect(0.7)
+                            }
+                            Text(isUploading ? "Uploading…" : "Submit on Behalf")
+                                .bold()
+                        }
+                    }
+                    .disabled(selectedUID.isEmpty || selectedPromptId.isEmpty || selectedItem == nil || isUploading)
+                }
+            }
+            .navigationTitle("Submit on Behalf")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .task { await loadPlayers() }
+        }
+    }
+
+    // MARK: - Load players from users collection
+
+    private func loadPlayers() async {
+        let db = Firestore.firestore()
+        do {
+            let snap = try await db.collection("users").getDocuments()
+            let loaded: [PlayerRecord] = snap.documents.compactMap { doc in
+                let data = doc.data()
+                guard let linkedPlayerId = data["linked_player_id"] as? String,
+                      !linkedPlayerId.isEmpty else { return nil }
+                let displayName = data["display_name"] as? String ?? linkedPlayerId
+                return PlayerRecord(
+                    id: doc.documentID,
+                    linkedPlayerId: linkedPlayerId,
+                    displayName: displayName
+                )
+            }
+            .sorted { $0.displayName < $1.displayName }
+            players = loaded
+        } catch {
+            errorMessage = "Failed to load players: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Upload + write exactly like a real player submission
+
+    private func submit() async {
+        guard !selectedUID.isEmpty,
+              !selectedPromptId.isEmpty,
+              let item = selectedItem else { return }
+
+        isUploading = true
+        errorMessage = nil
+        successMessage = nil
+        defer { isUploading = false }
+
+        guard let imageData = try? await item.loadTransferable(type: Data.self) else {
+            errorMessage = "Failed to load image data."
+            return
+        }
+
+        let player = players.first { $0.id == selectedUID }
+        let linkedPlayerId = player?.linkedPlayerId
+        let displayName    = player?.displayName
+        let playerUID      = selectedUID
+        let challengeId    = challenge.id
+        let promptId       = selectedPromptId
+
+        // Upload to Firebase Storage (same path as a real player upload)
+        let cleanUID  = playerUID.replacingOccurrences(of: "/", with: "_")
+        let cleanCId  = challengeId.replacingOccurrences(of: "/", with: "_")
+        let fileName  = "\(UUID().uuidString).jpg"
+        let path      = "weekly_challenge_photos/\(cleanCId)/\(cleanUID)/\(promptId)/\(fileName)"
+        let storageRef = Storage.storage().reference().child(path)
+
+        let meta = StorageMetadata()
+        meta.contentType = "image/jpeg"
+
+        do {
+            _ = try await storageRef.putDataAsync(imageData, metadata: meta)
+        } catch {
+            errorMessage = "Upload failed: \(error.localizedDescription)"
+            return
+        }
+
+        let downloadURL: URL
+        do {
+            downloadURL = try await storageRef.downloadURL()
+        } catch {
+            errorMessage = "Failed to get download URL: \(error.localizedDescription)"
+            return
+        }
+
+        // Write to Firestore — identical to PhotoChallengeStore.uploadPhoto
+        let db = Firestore.firestore()
+        do {
+            let docRef = db.collection("weekly_challenges")
+                .document(challengeId)
+                .collection("photo_submissions")
+                .document(playerUID)
+
+            let photoData: [String: Any] = [
+                "url": downloadURL.absoluteString,
+                "submitted_at": Timestamp(date: Date())
+            ]
+
+            try await docRef.setData([
+                "uid": playerUID,
+                "linked_player_id": linkedPlayerId as Any,
+                "display_name": displayName as Any,
+                "submitted_at": FieldValue.serverTimestamp(),
+                "photos": [promptId: photoData],
+                "photo_statuses": [promptId: "pending"]
+            ], merge: true)
+
+            successMessage = "✅ Submitted for \(displayName ?? playerUID)"
+            selectedItem = nil
+        } catch {
+            errorMessage = "Firestore write failed: \(error.localizedDescription)"
         }
     }
 }

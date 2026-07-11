@@ -51,6 +51,16 @@ struct MoreRootView: View {
                                 systemImage: "magnifyingglass.circle.fill"
                             )
                         }
+
+                        NavigationLink {
+                            UnfinalizedChallengesAdminView()
+                        } label: {
+                            hubRow(
+                                title: "Past Challenges",
+                                subtitle: "Grade and finalize unfinished challenges",
+                                systemImage: "clock.badge.exclamationmark.fill"
+                            )
+                        }
                     } header: {
                         Text("Admin")
                             .font(.caption.bold())

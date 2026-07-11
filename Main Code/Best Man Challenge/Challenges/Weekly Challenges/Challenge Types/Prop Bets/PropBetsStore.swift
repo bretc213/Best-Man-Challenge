@@ -22,6 +22,7 @@ final class PropBetsStore: ObservableObject {
     @Published var isDirty: Bool = false
     @Published var isSubmitting: Bool = false
     @Published var lastSubmittedAt: Date?
+    @Published var validationError: String?
 
     // ✅ Scoring
     @Published var computedScore: Int = 0
@@ -190,11 +191,55 @@ final class PropBetsStore: ObservableObject {
         // Don't write score until they actually submit picks (and answers exist)
     }
 
+    // MARK: - Duplicate pick validation
+
+    /// Checks for duplicate picks within any group of slots that share the same
+    /// player pool AND the same market category (e.g. all "Semifinalist" slots,
+    /// all "Finalist" slots). Picks are allowed to repeat across categories —
+    /// picking Harper for a semi slot AND a final slot is fine.
+    func validateSelections() -> String? {
+        // Group by option pool key + market base name so that semis and finals
+        // are checked independently even though they list the same players.
+        // e.g. "Semifinalist #1" → base "Semifinalist"
+        //      "Finalist #1"     → base "Finalist"
+        var groups: [String: [PropBet]] = [:]
+        for prop in props {
+            let optionKey = prop.options.map(\.id).sorted().joined(separator: "|")
+            guard !optionKey.isEmpty else { continue }
+            let marketBase = prop.market?.components(separatedBy: " #").first
+                          ?? prop.market
+                          ?? ""
+            let groupKey = "\(optionKey)__\(marketBase)"
+            groups[groupKey, default: []].append(prop)
+        }
+
+        for (_, groupProps) in groups where groupProps.count > 1 {
+            let picked = groupProps.compactMap { selections[$0.id] }
+            guard Set(picked).count < picked.count else { continue }
+
+            let marketText = groupProps.compactMap { $0.market }.joined(separator: " ").lowercased()
+            if marketText.contains("semi") {
+                return "You've picked the same player twice for the semis."
+            } else if marketText.contains("final") {
+                return "You've picked the same player twice for the final."
+            } else {
+                return "You've made a duplicate pick — each slot must be a different player."
+            }
+        }
+        return nil
+    }
+
     // ✅ Submit writes current picks
     func submitPicks() async {
         guard !isLocked else { return }
         guard let uid = Auth.auth().currentUser?.uid else { return }
         guard let challengeId = challenge?.id, !challengeId.isEmpty else { return }
+
+        // Validate before writing
+        if let error = validateSelections() {
+            validationError = error
+            return
+        }
 
         isSubmitting = true
         defer { isSubmitting = false }

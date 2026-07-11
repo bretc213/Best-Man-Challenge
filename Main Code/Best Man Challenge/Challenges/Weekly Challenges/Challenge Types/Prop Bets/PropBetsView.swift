@@ -44,6 +44,14 @@ struct PropBetsView: View {
         .onDisappear {
             store.stop()
         }
+        .alert("Duplicate Pick", isPresented: Binding(
+            get: { store.validationError != nil },
+            set: { if !$0 { store.validationError = nil } }
+        )) {
+            Button("Got it") { store.validationError = nil }
+        } message: {
+            Text(store.validationError ?? "")
+        }
         .safeAreaInset(edge: .bottom) {
             submitBar
         }
