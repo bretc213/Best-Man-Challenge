@@ -99,6 +99,7 @@ final class WeeklyStandingsStore: ObservableObject {
                         let displayName = (d["submitted_display_name"] as? String)
                             ?? (d["display_name"] as? String)
                             ?? (d["displayName"] as? String)
+                            ?? (d["linked_player_id"] as? String)  // fallback: player ID beats raw UID
                             ?? docId
 
                         let submittedAt =

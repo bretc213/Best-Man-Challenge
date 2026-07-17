@@ -69,16 +69,23 @@ enum WeeklyChallengeSeeder2026W27 {
         do {
             let snap = try await ref.getDocument()
 
-            // Skip only if already live (is_active == true means real props are set)
+            // Skip if already seeded with real HRD content.
+            // Title never changes when admin finalizes/deactivates — unlike is_active.
             if snap.exists,
-               let isActive = snap.data()?["is_active"] as? Bool,
-               isActive == true {
-                print("ℹ️ W27 Home Run Derby already active — skipping.")
+               let title = snap.data()?["title"] as? String,
+               title.contains("Home Run Derby") {
+                print("ℹ️ W27 Home Run Derby already seeded — skipping.")
                 return
             }
 
-            // Seed / overwrite the challenge document
-            try await ref.setData(buildChallengeData(), merge: true)
+            // Build the seed data. On re-runs (doc already exists), strip is_active so
+            // we never override what admin has set — only a fresh doc gets is_active: true.
+            var data = buildChallengeData()
+            if snap.exists {
+                data.removeValue(forKey: "is_active")
+            }
+
+            try await ref.setData(data, merge: true)
             print("✅ W27 Home Run Derby challenge doc seeded.")
 
             // Seed props (checks each individually — safe to re-run)

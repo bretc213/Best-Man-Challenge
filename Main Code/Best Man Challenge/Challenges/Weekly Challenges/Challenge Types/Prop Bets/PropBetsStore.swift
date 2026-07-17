@@ -42,6 +42,7 @@ final class PropBetsStore: ObservableObject {
 
     // Cache the linked player id so we don’t re-fetch every time
     private var cachedLinkedPlayerId: String?
+    private var cachedDisplayName: String?
 
     deinit {
         propsListener?.remove()
@@ -66,6 +67,7 @@ final class PropBetsStore: ObservableObject {
         lastPushedScore = nil
         lastPushedMax = nil
         cachedLinkedPlayerId = nil
+        cachedDisplayName = nil
 
         let db = Firestore.firestore()
         let challengeRef = db.collection("weekly_challenges").document(challengeId)
@@ -177,14 +179,19 @@ final class PropBetsStore: ObservableObject {
         scorePushTask?.cancel()
         scorePushTask = nil
         cachedLinkedPlayerId = nil
+        cachedDisplayName = nil
     }
 
     var isLocked: Bool { challenge?.isLocked ?? false }
 
-    // ✅ Local-only selection (no Firestore write)
+    // ✅ Local-only selection (no Firestore write). Tap again to deselect.
     func selectOption(propId: String, optionId: String) {
         guard !isLocked else { return }
-        selections[propId] = optionId
+        if selections[propId] == optionId {
+            selections.removeValue(forKey: propId)
+        } else {
+            selections[propId] = optionId
+        }
         isDirty = true
 
         recomputeScore()
@@ -273,20 +280,54 @@ final class PropBetsStore: ObservableObject {
     // MARK: - Scoring
 
     private func recomputeScore() {
-        // Only count props that have a correctOptionId set
-        let answeredProps = props.filter { ($0.correctOptionId ?? "").isEmpty == false }
-        answeredCount = answeredProps.count
+        // Group props by option pool + market base — same logic as validation.
+        // Groups of 2+ use POOL scoring: any pick that appears in the group's
+        // combined correct-answer set earns the point, regardless of slot order.
+        // (e.g. picking Harper for slot #3 when slot #1 is keyed to Harper still counts.)
+        // Single-prop groups use standard exact-match scoring.
+        //
+        // Pool groups are all-or-nothing: they only contribute to score/maxScore
+        // once EVERY prop in the group has a correctOptionId set.
 
-        // For prop bets, "max score" is how many props have an answer key (so standings appear only after you set them)
-        maxScore = answeredProps.count
+        var groups: [String: [PropBet]] = [:]
+        for prop in props {
+            let optionKey = prop.options.map(\.id).sorted().joined(separator: "|")
+            guard !optionKey.isEmpty else { continue }
+            let marketBase = prop.market?.components(separatedBy: " #").first
+                           ?? prop.market ?? ""
+            groups["\(optionKey)__\(marketBase)", default: []].append(prop)
+        }
 
         var score = 0
-        for p in answeredProps {
-            guard let correct = p.correctOptionId else { continue }
-            if selections[p.id] == correct {
-                score += 1
+        var answered = 0
+
+        for (_, groupProps) in groups {
+            if groupProps.count > 1 {
+                // Pool group — score against whichever correct answers admin has set so far.
+                // A player earns +1 for each confirmed correct player they picked ANYWHERE in
+                // their group selections (slot order doesn't matter).
+                let answeredProps = groupProps.filter { !($0.correctOptionId ?? "").isEmpty }
+                guard !answeredProps.isEmpty else { continue }
+
+                let correctPool = Set(answeredProps.compactMap { $0.correctOptionId })
+                answered += answeredProps.count
+
+                // All picks the user made across every slot in this group
+                let userPicks = Set(groupProps.compactMap { selections[$0.id] })
+                for correct in correctPool where userPicks.contains(correct) {
+                    score += 1
+                }
+
+            } else if let prop = groupProps.first {
+                // Standard exact-match
+                guard let correct = prop.correctOptionId, !correct.isEmpty else { continue }
+                answered += 1
+                if selections[prop.id] == correct { score += 1 }
             }
         }
+
+        answeredCount = answered
+        maxScore      = answered
         computedScore = score
     }
 
@@ -304,17 +345,22 @@ final class PropBetsStore: ObservableObject {
         if let cachedLinkedPlayerId { return cachedLinkedPlayerId }
 
         do {
-            let snap = try await Firestore.firestore().collection("users").document(uid).getDocument()
+            let db = Firestore.firestore()
+            let snap = try await db.collection("users").document(uid).getDocument()
             let linked = snap.data()?["linked_player_id"] as? String
             let cleaned = linked?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            if let cleaned, !cleaned.isEmpty {
-                cachedLinkedPlayerId = cleaned
-                return cleaned
+            guard let cleaned, !cleaned.isEmpty else { return nil }
+            cachedLinkedPlayerId = cleaned
+
+            // Also cache display name from players collection so submission shows a real name
+            if let playerSnap = try? await db.collection("players").document(cleaned).getDocument(),
+               let name = playerSnap.data()?["display_name"] as? String, !name.isEmpty {
+                cachedDisplayName = name
             }
-            return nil
+
+            return cleaned
         } catch {
-            // If we can’t read user doc, treat as not eligible for leaderboard
             errorMessage = "Failed to load user profile: \(error.localizedDescription)"
             return nil
         }
@@ -349,13 +395,17 @@ final class PropBetsStore: ObservableObject {
                 .collection("submissions")
                 .document(uid)
 
-            try await submissionRef.setData([
+            var submissionFields: [String: Any] = [
                 "uid": uid,
                 "linked_player_id": linkedPlayerId,
                 "score": computedScore,
                 "max_score": maxScore,
                 "updated_at": FieldValue.serverTimestamp()
-            ], merge: true)
+            ]
+            if let displayName = cachedDisplayName {
+                submissionFields["display_name"] = displayName
+            }
+            try await submissionRef.setData(submissionFields, merge: true)
 
             lastPushedScore = computedScore
             lastPushedMax = maxScore
