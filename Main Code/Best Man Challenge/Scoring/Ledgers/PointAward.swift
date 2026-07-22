@@ -13,6 +13,7 @@ struct PointAward: Identifiable, Hashable {
     let id: String
 
     let challengeId: String
+    let challengeTitle: String?
     let playerId: String
 
     let points: Double
@@ -31,6 +32,7 @@ struct PointAward: Identifiable, Hashable {
 
         self.id = id
         self.challengeId = challengeId
+        self.challengeTitle = data["challengeTitle"] as? String
         self.playerId = playerId
 
         self.points = (data["points"] as? NSNumber)?.doubleValue ?? 0.0

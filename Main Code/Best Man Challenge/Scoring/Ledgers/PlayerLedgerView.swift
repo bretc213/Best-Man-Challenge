@@ -88,10 +88,14 @@ struct PlayerLedgerView: View {
     }
 
     private func ledgerRow(_ a: PointAward) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let eventTitle = a.challengeTitle ?? challengeTitles[a.challengeId] ?? a.challengeId
+        let isManual = a.note?.lowercased().contains("manually") == true
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                // ✅ Prefer note (weekly winner), else friendly title, else raw id
-                Text(a.note ?? (challengeTitles[a.challengeId] ?? a.challengeId))
+                // ✅ Manual entries: event title is the main thing.
+                // Otherwise prefer note (weekly winner), else friendly title, else raw id
+                Text(isManual ? eventTitle : (a.note ?? eventTitle))
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(formatPoints(a.points))
@@ -112,6 +116,13 @@ struct PlayerLedgerView: View {
                 if let m = a.multiplier {
                     Text("•").foregroundStyle(.secondary)
                     Text("×\(formatPoints(m))")
+                        .foregroundStyle(.secondary)
+                }
+
+                if isManual {
+                    Text("•").foregroundStyle(.secondary)
+                    Text("(manually added)")
+                        .italic()
                         .foregroundStyle(.secondary)
                 }
             }

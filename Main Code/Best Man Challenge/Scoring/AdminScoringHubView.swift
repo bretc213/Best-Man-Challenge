@@ -79,6 +79,12 @@ struct AdminScoringHubView: View {
                     }
 
                     Section("Maintenance") {
+                        NavigationLink {
+                            AdminLedgerAdjustView()
+                        } label: {
+                            Label("Ledger Adjust", systemImage: "slider.horizontal.3")
+                        }
+
                         Button {
                             Task { await recomputeAllPlayerTotalsFromLedger() }
                         } label: {

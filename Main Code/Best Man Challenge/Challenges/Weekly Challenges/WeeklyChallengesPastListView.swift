@@ -96,12 +96,27 @@ struct WeeklyChallengesPastListView: View {
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)
 
-                Text(ch.type.displayName)
-                    .font(.caption.bold())
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(Color.accent.opacity(0.12))
-                    .foregroundStyle(Color.accent)
-                    .clipShape(Capsule())
+                HStack(spacing: 6) {
+                    Text(ch.type.displayName)
+                        .font(.caption.bold())
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Color.accent.opacity(0.12))
+                        .foregroundStyle(Color.accent)
+                        .clipShape(Capsule())
+
+                    if ch.is_finalized == true {
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.caption2)
+                            Text("Finalized")
+                                .font(.caption.bold())
+                        }
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Color.green.opacity(0.15))
+                        .foregroundStyle(Color.green)
+                        .clipShape(Capsule())
+                    }
+                }
             }
 
             Spacer()

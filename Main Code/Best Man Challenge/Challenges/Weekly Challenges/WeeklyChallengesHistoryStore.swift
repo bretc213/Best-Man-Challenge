@@ -23,8 +23,7 @@ final class WeeklyChallengesHistoryStore: ObservableObject {
 
         listener?.remove()
         listener = db.collection("weekly_challenges")
-            .whereField("is_active", isEqualTo: false)
-            .order(by: "week", descending: true)
+            .order(by: "weekInt", descending: true)
             .addSnapshotListener { [weak self] snap, err in
                 guard let self else { return }
 
@@ -41,22 +40,14 @@ final class WeeklyChallengesHistoryStore: ObservableObject {
                 let parsed: [WeeklyChallenge] = docs.compactMap { doc in
                     WeeklyChallengeManager.parseWeeklyChallenge(doc: doc)
                 }.filter { ch in
-                    // is_finalized is the explicit override:
-                    //   true  → always show in Past Weeks
-                    //   false → always hide
-                    //   nil   → fall back to date logic
-                    if let finalized = ch.is_finalized {
-                        return finalized
-                    }
+                    // Show if end_date has passed — primary trigger
+                    if let end = ch.endDate { return end < now }
 
-                    // Date-based fallback: only show challenges that have ended.
-                    if let end = ch.endDate {
-                        return end < now
-                    }
-                    if let start = ch.startDate {
-                        return start < now
-                    }
-                    return false  // no dates, no flag → hide (future placeholder)
+                    // No end date: fall back to start date
+                    if let start = ch.startDate { return start < now }
+
+                    // is_finalized == true is a catch-all override (no dates set)
+                    return ch.is_finalized == true
                 }
 
                 Task { @MainActor in

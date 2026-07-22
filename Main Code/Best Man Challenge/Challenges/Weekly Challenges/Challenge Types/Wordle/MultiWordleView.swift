@@ -150,10 +150,10 @@ struct MultiWordleView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Score", systemImage: "star.fill")
                 .font(.headline).foregroundStyle(.accent)
-            ForEach(games) { game in
+            ForEach(Array(games.enumerated()), id: \.element.id) { idx, game in
                 let pts = wordScore(for: game)
                 HStack {
-                    Text(game.label ?? game.id)
+                    Text("Word \(idx + 1)")
                     Spacer()
                     if game.submitted {
                         Text("\(pts) pts")
@@ -251,16 +251,12 @@ struct MultiWordleView: View {
         isSaving = true
         defer { isSaving = false }
 
-        let linkedId: String
-        let displayName: String?
-        if let snap = try? await Firestore.firestore().collection("users").document(uid).getDocument(),
-           let d = snap.data() {
-            linkedId    = (d["linkedPlayerId"] as? String) ?? uid
-            displayName = d["displayName"] as? String
-        } else {
-            linkedId    = uid
-            displayName = nil
-        }
+        // ✅ Use the already-parsed session profile (snake_case fields are read
+        // correctly in SessionStore). The previous version read camelCase keys
+        // ("displayName"/"linkedPlayerId") that don't exist on the user doc, so
+        // display_name was saved as nil and standings fell back to the raw UID.
+        let linkedId = session.linkedPlayerId ?? uid
+        let displayName = session.displayName
 
         do {
             try await Firestore.firestore()
@@ -271,7 +267,7 @@ struct MultiWordleView: View {
                 .setData([
                     "uid": uid,
                     "linked_player_id": linkedId,
-                    "display_name": displayName as Any,
+                    "display_name": displayName,
                     "score": totalScore,
                     "updated_at": FieldValue.serverTimestamp()
                 ], merge: true)

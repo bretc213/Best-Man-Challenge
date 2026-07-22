@@ -16,6 +16,10 @@ struct BestManChallengeApp: App {
     // ✅ NEW: make WeeklyChallengeManager globally available
     @StateObject private var weeklyChallengeManager = WeeklyChallengeManager()
 
+    // ✅ NEW: forces users onto TestFlight when their build is below the
+    // minimum_version set in Firestore (app_config/ios).
+    @StateObject private var updateChecker = AppUpdateChecker()
+
     // ✅ Prevents `.task` from running bootstrap more than once per app launch
     @State private var didBootstrapThisLaunch = false
 
@@ -36,7 +40,10 @@ struct BestManChallengeApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if session.isLoading {
+                if updateChecker.updateRequired {
+                    // ✅ Hard block — nothing else loads until they update.
+                    UpdateRequiredView(message: updateChecker.message)
+                } else if session.isLoading {
                     ZStack {
                         Color.background.ignoresSafeArea()
                         ProgressView("Loading...")
@@ -55,6 +62,9 @@ struct BestManChallengeApp: App {
                 // ✅ SwiftUI can re-run `.task` on view rebuilds — guard it.
                 guard !didBootstrapThisLaunch else { return }
                 didBootstrapThisLaunch = true
+                // ✅ Check version first. If an update is required the gate
+                // shows immediately; bootstrap still runs so Firestore stays warm.
+                await updateChecker.check()
                 await bootstrapApp()
             }
             // session.start() intentionally not called in onAppear: we start it in bootstrapApp()
@@ -85,9 +95,10 @@ struct BestManChallengeApp: App {
         await WeeklyChallengeSeeder2026W25.seedIfNeeded()  // Halfway Point Challenge (5 mini-games, 30 pts)
         await WeeklyChallengeSeeder2026W26.seedIfNeeded()  // July 4th Photo Challenge ✅ Ready
         // W27 Home Run Derby — seeder removed, challenge is finalized
-        await WeeklyChallengeSeeder2026W28.seedIfNeeded()  // World Cup Final Props (Team A/B = TBD)
-        await WeeklyChallengeSeeder2026W29.seedIfNeeded()  // Bret & Amanda Scavenger Hunt
-        await WeeklyChallengeSeeder2026W31.seedIfNeeded()
+        await WeeklyChallengeSeeder2026W28.seedIfNeeded()  // World Cup Final — Spain vs Argentina
+        await WeeklyChallengeSeeder2026W29.seedIfNeeded()  // Triple Wordle (was W31)
+        await WeeklyChallengeSeeder2026W30.seedIfNeeded()  // Bret & Amanda Scavenger Hunt (was W29)
+        // W31 — vacant slot (was W30)
         await WeeklyChallengeSeeder2026W47.seedIfNeeded()
         await WeeklyChallengeSeeder2026W48.seedIfNeeded()
 
