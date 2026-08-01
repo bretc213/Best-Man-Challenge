@@ -11,6 +11,8 @@
 
 import SwiftUI
 import FirebaseFirestore
+import FirebaseStorage
+import PhotosUI
 
 // MARK: - Root: player list
 
@@ -18,6 +20,7 @@ struct ScavengerHuntAdminView: View {
     let challenge: WeeklyChallenge
 
     @StateObject private var vm = ScavengerHuntAdminVM()
+    @State private var showAdminSubmit = false
 
     private var config: WeeklyChallengeScavengerHuntConfig? { challenge.scavenger_hunt }
 
@@ -49,6 +52,20 @@ struct ScavengerHuntAdminView: View {
         }
         .navigationTitle("Grade Hunt — W\(challenge.week)")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showAdminSubmit = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+            }
+        }
+        .sheet(isPresented: $showAdminSubmit) {
+            if let config {
+                AdminScavengerHuntSubmitView(challenge: challenge, config: config)
+            }
+        }
         .task { vm.load(challengeId: challenge.id) }
         .onDisappear { vm.stop() }
         .alert("Error", isPresented: Binding(
@@ -101,6 +118,7 @@ struct ScavengerHuntPlayerGraderView: View {
 
     @State private var confirmingItemId: String?
     @State private var pendingStatus: String = "valid"
+    @State private var fullScreenPhoto: IdentifiableURL?
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -119,7 +137,7 @@ struct ScavengerHuntPlayerGraderView: View {
                     scoreBanner(sub)
                 }
 
-                Text("Long-press a photo to grade it.")
+                Text("Tap a photo to enlarge & zoom · long-press to grade it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
@@ -146,6 +164,9 @@ struct ScavengerHuntPlayerGraderView: View {
         }
         .navigationTitle(live?.displayName ?? submission.uid)
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(item: $fullScreenPhoto) { item in
+            ZoomableFullScreenPhotoView(url: item.url)
+        }
         .confirmationDialog(
             "Grade Submission",
             isPresented: Binding(
@@ -302,6 +323,11 @@ struct ScavengerHuntPlayerGraderView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(statusBorderColor(status), lineWidth: 3)
         )
+        .onTapGesture {
+            if let url = URL(string: urlStr) {
+                fullScreenPhoto = IdentifiableURL(url: url)
+            }
+        }
         .onLongPressGesture {
             confirmingItemId = item.id
         }
@@ -406,6 +432,299 @@ final class ScavengerHuntAdminVM: ObservableObject {
 
         } catch {
             errorMessage = "Failed to update: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - =========================================================
+// MARK: - Zoomable full-screen photo (tap to enlarge, pinch/double-tap to zoom)
+// MARK: - =========================================================
+//
+// Reuses IdentifiableURL (defined in PhotoChallengeAdminView.swift).
+
+struct ZoomableFullScreenPhotoView: View {
+    let url: URL
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var scale: CGFloat = 1
+    @State private var lastScale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+
+    private let minScale: CGFloat = 1
+    private let maxScale: CGFloat = 5
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable()
+                        .scaledToFit()
+                        .scaleEffect(scale)
+                        .offset(offset)
+                        .gesture(magnification)
+                        .simultaneousGesture(scale > 1 ? drag : nil)
+                        .onTapGesture(count: 2) { toggleZoom() }
+                case .failure:
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                default:
+                    ProgressView().tint(.white)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding()
+            }
+        }
+    }
+
+    private var magnification: some Gesture {
+        MagnificationGesture()
+            .onChanged { value in
+                scale = min(max(lastScale * value, minScale), maxScale)
+            }
+            .onEnded { _ in
+                lastScale = scale
+                if scale <= minScale { resetZoom() }
+            }
+    }
+
+    private var drag: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                offset = CGSize(
+                    width: lastOffset.width + value.translation.width,
+                    height: lastOffset.height + value.translation.height
+                )
+            }
+            .onEnded { _ in lastOffset = offset }
+    }
+
+    private func toggleZoom() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            if scale > 1 {
+                resetZoom()
+            } else {
+                scale = 2.5
+                lastScale = 2.5
+            }
+        }
+    }
+
+    private func resetZoom() {
+        scale = 1; lastScale = 1
+        offset = .zero; lastOffset = .zero
+    }
+}
+
+// MARK: - =========================================================
+// MARK: - Admin: Submit a scavenger-hunt photo on behalf of a player
+// MARK: - =========================================================
+//
+// Mirrors AdminPhotoSubmitView (July 4th Photo Challenge) but writes the
+// scavenger-hunt shape: completed_items + item_statuses, scavenger storage path.
+
+struct AdminScavengerHuntSubmitView: View {
+    let challenge: WeeklyChallenge
+    let config: WeeklyChallengeScavengerHuntConfig
+    @Environment(\.dismiss) private var dismiss
+
+    private struct PlayerRecord: Identifiable {
+        let id: String          // Firebase UID
+        let linkedPlayerId: String
+        let displayName: String
+    }
+
+    @State private var players: [PlayerRecord] = []
+    @State private var selectedUID: String = ""
+    @State private var selectedItemId: String = ""
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var isUploading = false
+    @State private var errorMessage: String?
+    @State private var successMessage: String?
+
+    private var items: [ScavengerHuntItem] {
+        config.items.sorted { ($0.position ?? 99) < ($1.position ?? 99) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Player") {
+                    if players.isEmpty {
+                        HStack {
+                            ProgressView().scaleEffect(0.7)
+                            Text("Loading players…").foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Picker("Select Player", selection: $selectedUID) {
+                            Text("Choose a player").tag("")
+                            ForEach(players) { player in
+                                Text(player.displayName).tag(player.id)
+                            }
+                        }
+                    }
+                }
+
+                Section("Item") {
+                    Picker("Select Item", selection: $selectedItemId) {
+                        Text("Choose an item").tag("")
+                        ForEach(items) { item in
+                            Text("\(item.emoji) \(item.clue)").tag(item.id)
+                        }
+                    }
+                }
+
+                Section("Photo") {
+                    PhotosPicker(selection: $selectedItem, matching: .images) {
+                        Label(
+                            selectedItem == nil ? "Select Photo" : "Photo Selected ✓",
+                            systemImage: "photo.badge.plus"
+                        )
+                    }
+                }
+
+                if let err = errorMessage {
+                    Section { Text(err).foregroundStyle(.red).font(.caption) }
+                }
+                if let suc = successMessage {
+                    Section { Text(suc).foregroundStyle(.green).font(.caption) }
+                }
+
+                Section {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        HStack {
+                            if isUploading { ProgressView().scaleEffect(0.7) }
+                            Text(isUploading ? "Uploading…" : "Submit on Behalf").bold()
+                        }
+                    }
+                    .disabled(selectedUID.isEmpty || selectedItemId.isEmpty || selectedItem == nil || isUploading)
+                }
+            }
+            .navigationTitle("Submit on Behalf")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .task { await loadPlayers() }
+        }
+    }
+
+    // MARK: - Load players from users collection
+
+    private func loadPlayers() async {
+        let db = Firestore.firestore()
+        do {
+            let snap = try await db.collection("users").getDocuments()
+            let loaded: [PlayerRecord] = snap.documents.compactMap { doc in
+                let data = doc.data()
+                guard let linkedPlayerId = data["linked_player_id"] as? String,
+                      !linkedPlayerId.isEmpty else { return nil }
+                let displayName = data["display_name"] as? String ?? linkedPlayerId
+                return PlayerRecord(
+                    id: doc.documentID,
+                    linkedPlayerId: linkedPlayerId,
+                    displayName: displayName
+                )
+            }
+            .sorted { $0.displayName < $1.displayName }
+            players = loaded
+        } catch {
+            errorMessage = "Failed to load players: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Upload + write exactly like a real scavenger-hunt submission
+
+    private func submit() async {
+        guard !selectedUID.isEmpty,
+              !selectedItemId.isEmpty,
+              let item = selectedItem else { return }
+
+        isUploading = true
+        errorMessage = nil
+        successMessage = nil
+        defer { isUploading = false }
+
+        guard let rawData = try? await item.loadTransferable(type: Data.self) else {
+            errorMessage = "Failed to load image data."
+            return
+        }
+
+        // Compress the same way real player uploads do (0.75 JPEG)
+        var imageData = rawData
+        if let ui = UIImage(data: rawData), let jpeg = ui.jpegData(compressionQuality: 0.75) {
+            imageData = jpeg
+        }
+
+        let player = players.first { $0.id == selectedUID }
+        let linkedPlayerId = player?.linkedPlayerId
+        let displayName    = player?.displayName
+        let playerUID      = selectedUID
+        let challengeId    = challenge.id
+        let itemId         = selectedItemId
+
+        // Upload to Firebase Storage — same path shape as ScavengerHuntStore.uploadProof
+        let cleanUID  = playerUID.replacingOccurrences(of: "/", with: "_")
+        let cleanCId  = challengeId.replacingOccurrences(of: "/", with: "_")
+        let fileName  = "\(UUID().uuidString).jpg"
+        let path      = "weekly_challenge_photos/\(cleanCId)/\(cleanUID)/scavenger/\(itemId)/\(fileName)"
+        let storageRef = Storage.storage().reference().child(path)
+
+        let meta = StorageMetadata()
+        meta.contentType = "image/jpeg"
+
+        do {
+            _ = try await storageRef.putDataAsync(imageData, metadata: meta)
+        } catch {
+            errorMessage = "Upload failed: \(error.localizedDescription)"
+            return
+        }
+
+        let downloadURL: URL
+        do {
+            downloadURL = try await storageRef.downloadURL()
+        } catch {
+            errorMessage = "Failed to get download URL: \(error.localizedDescription)"
+            return
+        }
+
+        // Write to Firestore — identical shape to ScavengerHuntStore.uploadProof
+        let db = Firestore.firestore()
+        do {
+            let docRef = db.collection("weekly_challenges")
+                .document(challengeId)
+                .collection("photo_submissions")
+                .document(playerUID)
+
+            try await docRef.setData([
+                "uid": playerUID,
+                "linked_player_id": linkedPlayerId as Any,
+                "display_name": displayName as Any,
+                "submitted_at": FieldValue.serverTimestamp(),
+                "completed_items": [itemId: downloadURL.absoluteString],
+                "item_statuses": [itemId: "pending"]
+            ], merge: true)
+
+            successMessage = "✅ Submitted for \(displayName ?? playerUID)"
+            selectedItem = nil
+        } catch {
+            errorMessage = "Firestore write failed: \(error.localizedDescription)"
         }
     }
 }
