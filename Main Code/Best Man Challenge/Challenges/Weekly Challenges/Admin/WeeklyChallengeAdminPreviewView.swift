@@ -28,6 +28,7 @@ struct WeeklyChallengeAdminPreviewView: View {
     @State private var showQuiz             = false
     @State private var showImageQuiz        = false
     @State private var showPropBets         = false
+    @State private var showCipher           = false
 
     var body: some View {
         ScrollView {
@@ -111,6 +112,13 @@ struct WeeklyChallengeAdminPreviewView: View {
             NavigationLink(destination:
                 WeeklyQuizPlayView(challenge: challenge, manager: manager),
                 isActive: $showQuiz
+            ) { EmptyView() }
+
+            NavigationLink(destination:
+                CipherChallengeView(challenge: challenge)
+                    .environmentObject(manager)
+                    .environmentObject(session),
+                isActive: $showCipher
             ) { EmptyView() }
 
             NavigationLink(destination:
@@ -240,6 +248,9 @@ struct WeeklyChallengeAdminPreviewView: View {
 
             case .connections:
                 launchButton("Play Connections", icon: "square.grid.2x2.fill") { showConnections = true }
+
+            case .riddle where challenge.puzzle != nil && challenge.cipher != nil:
+                launchButton("Play the Cipher", icon: "lock.square.fill") { showCipher = true }
 
             case .quiz, .riddle:
                 launchButton("Start Quiz", icon: "questionmark.circle.fill") { showQuiz = true }

@@ -13,6 +13,7 @@ struct WeeklyChallengeView: View {
     @State private var showPhotoChallenge = false
     @State private var showScavengerHunt = false
     @State private var showConnections = false
+    @State private var showCipher = false
     @State private var showHalfwayChallenge = false
     @State private var showPropBetsAdmin = false
     @State private var showPhotoAdmin = false
@@ -155,6 +156,15 @@ struct WeeklyChallengeView: View {
                         .environmentObject(session)
                 } else {
                     Text("No active challenge.").navigationTitle("Connections")
+                }
+            }
+            .navigationDestination(isPresented: $showCipher) {
+                if let challenge = challengeManager.currentChallenge {
+                    CipherChallengeView(challenge: challenge)
+                        .environmentObject(challengeManager)
+                        .environmentObject(session)
+                } else {
+                    Text("No active challenge.").navigationTitle("The Cipher")
                 }
             }
             .navigationDestination(isPresented: $showHalfwayChallenge) {
@@ -345,6 +355,16 @@ struct WeeklyChallengeView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     Text(locked ? "Submissions are closed." : "Group four words that share a connection.")
+                        .foregroundStyle(.secondary).font(.footnote)
+                }
+
+                if challenge.type == .riddle, challenge.puzzle != nil, challenge.cipher != nil {
+                    Button { showCipher = true } label: {
+                        Text(locked ? "View Cipher (Locked)" : "Play the Cipher")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text(locked ? "Submissions are closed." : "Solve the sudoku, crack the code, then answer the riddle.")
                         .foregroundStyle(.secondary).font(.footnote)
                 }
 

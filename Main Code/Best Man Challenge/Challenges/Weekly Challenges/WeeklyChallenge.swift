@@ -153,6 +153,8 @@ struct WeeklyChallenge: Identifiable, Codable {
     let locksAt: Date?
 
     let answer: String?
+    /// Additional accepted answers (case/punctuation-insensitive) beyond `answer`.
+    let accepted_answers: [String]?
     let rules: [String]?
 
     let puzzle: WeeklyChallengePuzzle?
@@ -186,6 +188,7 @@ struct WeeklyChallenge: Identifiable, Codable {
         endDate: Date? = nil,
         locksAt: Date? = nil,
         answer: String? = nil,
+        accepted_answers: [String]? = nil,
         rules: [String]? = nil,
         puzzle: WeeklyChallengePuzzle? = nil,
         cipher: WeeklyChallengeCipher? = nil,
@@ -208,6 +211,7 @@ struct WeeklyChallenge: Identifiable, Codable {
         self.endDate = endDate
         self.locksAt = locksAt
         self.answer = answer
+        self.accepted_answers = accepted_answers
         self.rules = rules
         self.puzzle = puzzle
         self.cipher = cipher

@@ -98,7 +98,8 @@ struct BestManChallengeApp: App {
         await WeeklyChallengeSeeder2026W28.seedIfNeeded()  // World Cup Final — Spain vs Argentina
         await WeeklyChallengeSeeder2026W29.seedIfNeeded()  // Triple Wordle (was W31)
         await WeeklyChallengeSeeder2026W30.seedIfNeeded()  // Bret & Amanda Scavenger Hunt (was W29)
-        // W31 — vacant slot (was W30)
+        await WeeklyChallengeSeeder2026W31.seedIfNeeded()  // The Midsummer Cipher (was W30) — overwrites old Triple Wordle
+        await WeeklyChallengeSeeder2026W32.seedIfNeeded()  // Connections — Best Man Edition #1 (10 pts)
         await WeeklyChallengeSeeder2026W47.seedIfNeeded()
         await WeeklyChallengeSeeder2026W48.seedIfNeeded()
 

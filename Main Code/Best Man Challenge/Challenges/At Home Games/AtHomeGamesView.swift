@@ -179,6 +179,19 @@ struct AtHomeGamesView: View {
 
     // MARK: - Destinations
 
+    /// True if this tile is the CFB Conference Championships game, matched
+    /// leniently (route / id / challengeId / title) so a manually-created
+    /// placeholder tile routes to the real view even if its route field differs.
+    private func isConfChampsTile(_ game: AtHomeGame) -> Bool {
+        let keys = [game.route, game.id, game.challengeId ?? ""]
+            .map { $0.lowercased() }
+        if keys.contains(where: { $0.contains("conf_champ") || $0.contains("conf champ") }) {
+            return true
+        }
+        let title = game.title.lowercased()
+        return title.contains("conf. champ") || title.contains("conf champ")
+    }
+
     @ViewBuilder
     private func destinationView(for game: AtHomeGame) -> some View {
         // Generic bracket routing (Firebase-driven)
@@ -192,6 +205,11 @@ struct AtHomeGamesView: View {
                 challengeId: game.gameRefId ?? "wcws_2026",
                 session: session
             )
+
+        } else if isConfChampsTile(game) {
+            // Matches the CFB Conf. Champs tile by route/id/challengeId/title,
+            // so a manually-created placeholder tile still routes correctly.
+            CFBConfChampsRootView()
 
         } else {
             switch game.route {

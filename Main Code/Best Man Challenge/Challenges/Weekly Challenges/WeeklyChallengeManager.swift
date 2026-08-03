@@ -568,6 +568,7 @@ final class WeeklyChallengeManager: ObservableObject {
             endDate: endDate,
             locksAt: locksAt,
             answer: answer,
+            accepted_answers: data["accepted_answers"] as? [String],
             rules: rules,
             puzzle: puzzle,
             cipher: cipher,
@@ -744,6 +745,55 @@ final class WeeklyChallengeManager: ObservableObject {
             "linked_player_id": self.linkedPlayerId as Any,
             "display_name": bestName,
             "answers": answers,
+            "score": score,
+            "maxScore": maxScore,
+            "submittedAt": Timestamp(date: Date())
+        ]
+
+        try await db.collection("weekly_challenges")
+            .document(challengeId)
+            .collection("submissions")
+            .document(sid)
+            .setData(payload, merge: true)
+    }
+
+    /// Multi-stage cipher challenge: stores a partial score (0...maxScore) plus a
+    /// per-stage breakdown and the typed phrase/answer. `score` is what the weekly
+    /// standings read, so partial credit flows straight to the leaderboard.
+    func submitCipherResult(
+        phrase: String,
+        answer: String,
+        score: Int,
+        maxScore: Int,
+        breakdown: [String: Bool]
+    ) async throws {
+        guard let challengeId = currentChallenge?.id else {
+            throw NSError(domain: "WeeklyChallenge", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "No active challenge."])
+        }
+        guard let uid = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "WeeklyChallenge", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "You must be logged in to submit."])
+        }
+        guard let sid = resolvedSubmitterId() else {
+            throw NSError(domain: "WeeklyChallenge", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Missing user context."])
+        }
+
+        let bestName = bestDisplayName(uid: uid)
+        let allCorrect = breakdown.values.allSatisfy { $0 }
+
+        let payload: [String: Any] = [
+            "uid": uid,
+            "linked_player_id": self.linkedPlayerId as Any,
+            "display_name": bestName,
+            "answerText": answer.trimmingCharacters(in: .whitespacesAndNewlines),
+            "isCorrect": allCorrect,
+            "textAnswers": [
+                "phrase": phrase.trimmingCharacters(in: .whitespacesAndNewlines),
+                "answer": answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            ],
+            "breakdown": breakdown,
             "score": score,
             "maxScore": maxScore,
             "submittedAt": Timestamp(date: Date())
