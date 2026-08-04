@@ -119,6 +119,15 @@ final class WeeklyStandingsStore: ObservableObject {
         var byUser: [String: [QueryDocumentSnapshot]] = [:]
         for doc in latestDocs {
             let data = doc.data()
+
+            // Skip cipher docs that are only saved progress (sudoku solved / phrase
+            // decoded) and haven't been finalized — don't show them on the board yet.
+            if data["cipher_progress"] != nil,
+               data["final_submitted"] as? Bool != true,
+               data["score"] == nil {
+                continue
+            }
+
             let userId = (data["user_id"] as? String)
                 ?? (data["uid"] as? String)
                 ?? (data["playerId"] as? String)

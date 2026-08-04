@@ -665,6 +665,16 @@ final class WeeklyChallengeManager: ObservableObject {
         let answerText = data["answerText"] as? String
         let isCorrect = data["isCorrect"] as? Bool
 
+        // Cipher challenge in-progress state (lets players resume mid-puzzle)
+        let cp = data["cipher_progress"] as? [String: Any]
+        let cipherGrid = (cp?["grid"] as? [Int])
+            ?? (cp?["grid"] as? [Any])?.compactMap { intValue($0) }
+        let cipherSudokuUnlocked = cp?["sudoku_unlocked"] as? Bool
+        let cipherPhraseLocked = cp?["phrase_locked"] as? Bool
+        let cipherPhrase = cp?["phrase"] as? String
+        let cipherFinalSubmitted = (data["final_submitted"] as? Bool)
+            ?? (cp?["final_submitted"] as? Bool)
+
         return WeeklyChallengeSubmission(
             id: submitterId,
             uid: uid,
@@ -677,6 +687,11 @@ final class WeeklyChallengeManager: ObservableObject {
             score: score,
             maxScore: maxScore,
             breakdown: breakdown,
+            cipherGrid: cipherGrid,
+            cipherSudokuUnlocked: cipherSudokuUnlocked,
+            cipherPhraseLocked: cipherPhraseLocked,
+            cipherPhrase: cipherPhrase,
+            cipherFinalSubmitted: cipherFinalSubmitted,
             wordleAttempts: wordleAttempts,
             wordleSolved: wordleSolved,
             wordleGuesses: wordleGuesses,
@@ -796,6 +811,7 @@ final class WeeklyChallengeManager: ObservableObject {
             "breakdown": breakdown,
             "score": score,
             "maxScore": maxScore,
+            "final_submitted": true,
             "submittedAt": Timestamp(date: Date())
         ]
 
@@ -804,6 +820,45 @@ final class WeeklyChallengeManager: ObservableObject {
             .collection("submissions")
             .document(sid)
             .setData(payload, merge: true)
+    }
+
+    /// Persists in-progress cipher state (solved sudoku, decoded phrase) WITHOUT a
+    /// score, so players can leave and resume. Never overwrites a finished submission,
+    /// and never counts as the one-and-done final answer.
+    func saveCipherProgress(
+        grid: [Int],
+        sudokuUnlocked: Bool,
+        phraseLocked: Bool,
+        phrase: String
+    ) async {
+        // Never touch a submission that's already been finalized.
+        if lastSubmission?.cipherFinalSubmitted == true || lastSubmission?.score != nil { return }
+
+        guard let challengeId = currentChallenge?.id,
+              let uid = Auth.auth().currentUser?.uid,
+              let sid = resolvedSubmitterId() else { return }
+
+        let payload: [String: Any] = [
+            "uid": uid,
+            "linked_player_id": self.linkedPlayerId as Any,
+            "display_name": bestDisplayName(uid: uid),
+            "cipher_progress": [
+                "grid": grid,
+                "sudoku_unlocked": sudokuUnlocked,
+                "phrase_locked": phraseLocked,
+                "phrase": phrase.trimmingCharacters(in: .whitespacesAndNewlines)
+            ]
+        ]
+
+        do {
+            try await db.collection("weekly_challenges")
+                .document(challengeId)
+                .collection("submissions")
+                .document(sid)
+                .setData(payload, merge: true)
+        } catch {
+            print("⚠️ saveCipherProgress failed:", error.localizedDescription)
+        }
     }
 
     func submitImageQuiz(
@@ -1025,6 +1080,13 @@ struct WeeklyChallengeSubmission: Identifiable {
     let maxScore: Int?
     let breakdown: [String: Bool]?
 
+    // Cipher challenge resumable progress
+    let cipherGrid: [Int]?
+    let cipherSudokuUnlocked: Bool?
+    let cipherPhraseLocked: Bool?
+    let cipherPhrase: String?
+    let cipherFinalSubmitted: Bool?
+
     let wordleAttempts: Int?
     let wordleSolved: Bool?
     let wordleGuesses: [String]?
@@ -1049,6 +1111,11 @@ struct WeeklyChallengeSubmission: Identifiable {
         score: Int? = nil,
         maxScore: Int? = nil,
         breakdown: [String: Bool]? = nil,
+        cipherGrid: [Int]? = nil,
+        cipherSudokuUnlocked: Bool? = nil,
+        cipherPhraseLocked: Bool? = nil,
+        cipherPhrase: String? = nil,
+        cipherFinalSubmitted: Bool? = nil,
         wordleAttempts: Int? = nil,
         wordleSolved: Bool? = nil,
         wordleGuesses: [String]? = nil,
@@ -1065,6 +1132,11 @@ struct WeeklyChallengeSubmission: Identifiable {
         self.score = score
         self.maxScore = maxScore
         self.breakdown = breakdown
+        self.cipherGrid = cipherGrid
+        self.cipherSudokuUnlocked = cipherSudokuUnlocked
+        self.cipherPhraseLocked = cipherPhraseLocked
+        self.cipherPhrase = cipherPhrase
+        self.cipherFinalSubmitted = cipherFinalSubmitted
         self.wordleAttempts = wordleAttempts
         self.wordleSolved = wordleSolved
         self.wordleGuesses = wordleGuesses
