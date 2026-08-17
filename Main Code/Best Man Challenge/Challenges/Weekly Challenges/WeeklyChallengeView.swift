@@ -16,6 +16,7 @@ struct WeeklyChallengeView: View {
     @State private var showCipher = false
     @State private var showHalfwayChallenge = false
     @State private var showPropBetsAdmin = false
+    @State private var showSubmissionsAdmin = false
     @State private var showPhotoAdmin = false
     @State private var showPhotoGrader = false
     @State private var showScavengerAdmin = false
@@ -180,6 +181,13 @@ struct WeeklyChallengeView: View {
                     PropBetsAdminGradingView(challenge: challenge)
                 } else {
                     Text("No active challenge.").navigationTitle("Grade Props")
+                }
+            }
+            .navigationDestination(isPresented: $showSubmissionsAdmin) {
+                if let challenge = challengeManager.currentChallenge {
+                    WeeklyChallengeSubmissionsAdminView(challenge: challenge)
+                } else {
+                    Text("No active challenge.").navigationTitle("Submissions")
                 }
             }
             .navigationDestination(isPresented: $showPhotoAdmin) {
@@ -448,6 +456,22 @@ struct WeeklyChallengeView: View {
                 .buttonStyle(.bordered)
                 .tint(.orange)
             }
+
+            // Universal (all types): view + delete individual player submissions.
+            Divider().opacity(0.4)
+
+            Button {
+                showSubmissionsAdmin = true
+            } label: {
+                Label("Manage Submissions", systemImage: "person.2.slash")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+
+            Text("Delete a player's submission (e.g. clear your own to replay).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding()
         .background(Color.orange.opacity(0.08))

@@ -29,6 +29,7 @@ struct WeeklyChallengeAdminPreviewView: View {
     @State private var showImageQuiz        = false
     @State private var showPropBets         = false
     @State private var showCipher           = false
+    @State private var showSubmissionsAdmin = false
 
     var body: some View {
         ScrollView {
@@ -45,6 +46,9 @@ struct WeeklyChallengeAdminPreviewView: View {
 
                 // Game launch button
                 launchSection
+
+                // Admin tools (all challenge types)
+                submissionsAdminSection
 
                 Text("⚠️ Preview mode — submissions go to Firestore like normal. Useful for testing engines before a week goes live.")
                     .font(.caption)
@@ -136,6 +140,11 @@ struct WeeklyChallengeAdminPreviewView: View {
                 HalfwayChallengeView(challenge: challenge)
                     .environmentObject(session),
                 isActive: $showHalfwayChallenge
+            ) { EmptyView() }
+
+            NavigationLink(destination:
+                WeeklyChallengeSubmissionsAdminView(challenge: challenge),
+                isActive: $showSubmissionsAdmin
             ) { EmptyView() }
         }
         // Hidden — zero size
@@ -283,5 +292,26 @@ struct WeeklyChallengeAdminPreviewView: View {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
+    }
+
+    // MARK: - Submissions admin (delete individual entries)
+
+    private var submissionsAdminSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                showSubmissionsAdmin = true
+            } label: {
+                Label("Manage Submissions", systemImage: "person.2.slash")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .controlSize(.large)
+
+            Text("View and delete individual player submissions for this challenge (e.g. clear your own to replay).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal)
     }
 }

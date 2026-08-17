@@ -117,6 +117,9 @@ struct CFBTabButton: View {
 
 // MARK: - Shared Team Logo
 
+/// Team badge. Uses the uploaded logo asset when one exists in the bundle;
+/// otherwise falls back to a colored monogram (team initials on a stable,
+/// per-team color) so every team stays visually distinct with no image assets.
 struct CFBTeamLogo: View {
     let team: CFBTeam?
     var size: CGFloat = 40
@@ -128,11 +131,45 @@ struct CFBTeamLogo: View {
                     .resizable()
                     .scaledToFit()
             } else {
-                Image(systemName: "shield.fill")
-                    .font(.system(size: size * 0.5))
-                    .foregroundStyle(.secondary.opacity(0.5))
+                Circle()
+                    .fill(badgeColor.gradient)
+                    .overlay(
+                        Text(monogram)
+                            .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                            .padding(size * 0.1)
+                    )
+                    .overlay(
+                        Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5)
+                    )
             }
         }
         .frame(width: size, height: size)
+    }
+
+    /// 1–3 letter monogram derived from the team name.
+    /// "Ohio State" → "OS", "Ole Miss" → "OM", "LSU" → "LSU", "Texas A&M" → "TA".
+    private var monogram: String {
+        guard let name = team?.name, !name.isEmpty else { return "?" }
+        // All-caps acronym schools (LSU, BYU, TCU, UCLA, USC, UAB, UTSA, FIU, UNLV, UTEP, SMU, UCF…)
+        if name == name.uppercased() {
+            return String(name.filter { $0.isLetter }.prefix(3))
+        }
+        let words = name.split { !$0.isLetter }
+        if words.count >= 2 {
+            return words.prefix(2).compactMap { $0.first }.map(String.init).joined().uppercased()
+        }
+        return String(name.filter { $0.isLetter }.prefix(2)).uppercased()
+    }
+
+    /// Deterministic, launch-stable color per team (djb2 hash of the team id → hue).
+    private var badgeColor: Color {
+        let key = team?.id ?? "?"
+        var hash: UInt64 = 5381
+        for byte in key.utf8 { hash = (hash &* 33) ^ UInt64(byte) }
+        let hue = Double(hash % 360) / 360.0
+        return Color(hue: hue, saturation: 0.55, brightness: 0.72)
     }
 }
